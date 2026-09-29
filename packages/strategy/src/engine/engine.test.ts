@@ -166,8 +166,25 @@ describe("no execution coupling", () => {
       "confidence",
       "direction",
       "metrics",
+      "probabilityUp",
       "regime",
       "timestamp",
     ]);
+  });
+
+  it("probabilityUp is a bounded [0,1] mirror of direction (uncalibrated prior)", () => {
+    const up = computeAssetSignal(uptrend(), CFG, NOW);
+    const down = computeAssetSignal(downtrend(), CFG, NOW);
+    expect(up.probabilityUp).toBeCloseTo((1 + up.direction) / 2, 12);
+    expect(down.probabilityUp).toBeCloseTo((1 + down.direction) / 2, 12);
+    expect(up.metrics.probabilitySource).toBe("raw_score");
+    expect(up.probabilityUp).toBeGreaterThanOrEqual(0);
+    expect(up.probabilityUp).toBeLessThanOrEqual(1);
+  });
+
+  it("data-starved signals carry the default 0.5 probability and say so", () => {
+    const s = computeAssetSignal(createAssetHistory("BTC", []), CFG, NOW);
+    expect(s.probabilityUp).toBe(0.5);
+    expect(s.metrics.probabilitySource).toBe("default");
   });
 });

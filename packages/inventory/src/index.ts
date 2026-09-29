@@ -23,13 +23,18 @@ export {
   planRebalance,
   targetResidual,
   type CompleteSetEconomics,
+  type EdgeSizingParams,
   type MarketPhase,
   type RebalanceAction,
   type RebalancePlannerInput,
   type RebalanceRiskLimits,
   type SignalStance,
+  type SizingModel,
+  type SizingSelection,
   type StrategyDecision,
 } from "./rebalancing.js";
+
+export { edgeTargetResidual, type EdgeSizingInput, type EdgeSizingResult } from "./sizing.js";
 
 export {
   createAcquisitionLot,

@@ -25,6 +25,7 @@ import {
   targetResidual,
   type MarketPhase,
   type RebalancePlannerInput,
+  type SizingSelection,
   type StrategyDecision,
 } from "./index.js";
 
@@ -67,6 +68,7 @@ interface PlanOpts {
   availableCapital: string;
   maxResidual: string;
   perSetCosts?: string;
+  sizing?: SizingSelection;
 }
 
 function makePlan(o: Partial<PlanOpts>): RebalancePlannerInput {
@@ -103,6 +105,7 @@ function makePlan(o: Partial<PlanOpts>): RebalancePlannerInput {
       availableCapital: d(opts.availableCapital),
     },
     maxResidual: d(opts.maxResidual),
+    ...(opts.sizing === undefined ? {} : { sizing: opts.sizing }),
     at: T0,
   };
 }
@@ -458,5 +461,73 @@ describe("planRebalance — invalid inputs", () => {
   it("rejects out-of-range signal values", () => {
     expect(() => planRebalance(makePlan({ direction: "1.5" }))).toThrow(ValidationError);
     expect(() => planRebalance(makePlan({ confidence: "-0.2" }))).toThrow(ValidationError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T1: edge-based sizing model (selectable; legacy default unchanged)
+// ---------------------------------------------------------------------------
+
+describe("planRebalance — edge sizing model (T1)", () => {
+  const edgeParams = {
+    pUp: d("0.6"),
+    takerFeeRate: d("0.07"),
+    kellyFraction: d("0.25"),
+    minEdge: d("0.01"),
+  };
+
+  it("sizes from the net edge against the executable asks, not direction x confidence", () => {
+    // p_up 0.6, asks 0.50/0.50: edge_up = 0.0825 -> Up target (Kelly-sized).
+    const plan = planRebalance(
+      makePlan({
+        direction: "1",
+        confidence: "1",
+        upPrice: "0.50",
+        downPrice: "0.50",
+        sizing: { model: "edge", edge: edgeParams },
+      }),
+    );
+    expect(plan.targetResidualUp > d("0")).toBe(true);
+    expect(plan.targetResidualDown.toString()).toBe("0");
+    // Legacy directional model with direction=1, confidence=1 would target the
+    // full maxResidual (100); the Kelly-sized target must be strictly smaller.
+    expect(decCompare(plan.targetResidualUp, d("100"))).toBeLessThan(0);
+    // And a rebalance_up action exists with a positive qty.
+    const act = plan.actions.find((a) => a.kind === "rebalance_up");
+    expect(act !== undefined).toBe(true);
+  });
+
+  it("gives no target action when the net edge is below minEdge", () => {
+    // p_up 0.51 vs ask 0.55: edge_up < 0 and edge_down (0.49 - 0.55 - fee) < 0.
+    const plan = planRebalance(
+      makePlan({
+        direction: "1",
+        confidence: "1",
+        upPrice: "0.55",
+        downPrice: "0.55",
+        sizing: { model: "edge", edge: { ...edgeParams, pUp: d("0.51") } },
+      }),
+    );
+    expect(plan.targetResidualUp.toString()).toBe("0");
+    expect(plan.targetResidualDown.toString()).toBe("0");
+    expect(plan.actions.find((a) => a.kind.startsWith("rebalance_"))).toBeUndefined();
+  });
+
+  it("respects a positive set edge: accumulate_sets still fires under the edge model", () => {
+    // Asks 0.45/0.50 sum to 0.95 -> set edge 0.05 per set.
+    const plan = planRebalance(
+      makePlan({ upPrice: "0.45", downPrice: "0.50", sizing: { model: "edge", edge: edgeParams } }),
+    );
+    expect(plan.setEdgePositive).toBe(true);
+    expect(plan.actions.find((a) => a.kind === "accumulate_sets")).toBeDefined();
+  });
+
+  it("keeps the legacy directional target identical when sizing is omitted", () => {
+    const legacy = planRebalance(makePlan({ direction: "1", confidence: "0.8" }));
+    const explicit = planRebalance(
+      makePlan({ direction: "1", confidence: "0.8", sizing: { model: "directional" } }),
+    );
+    expect(legacy.targetResidualUp.toString()).toBe(explicit.targetResidualUp.toString());
+    expect(decCompare(legacy.targetResidualUp, d("80"))).toBe(0); // 1 x 0.8 x 100 x 1.0
   });
 });

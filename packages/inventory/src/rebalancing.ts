@@ -49,6 +49,7 @@ import {
 } from "@bot/domain";
 
 import { matchCompleteSets, type AcquisitionLot } from "./complete-set-engine.js";
+import { edgeTargetResidual } from "./sizing.js";
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -67,6 +68,33 @@ export interface SignalStance {
 
 /** Where we are in the 5-minute cycle (canonical phase engine output). */
 export type MarketPhase = "EARLY" | "MID" | "LATE" | "FINAL";
+
+/**
+ * Target-residual sizing model (T1):
+ * - `directional` (legacy default): `direction × confidence × maxResidual ×
+ *   phaseMultiplier`.
+ * - `edge`: fractional-Kelly on the net-of-fee edge between the model
+ *   probability and the executable asks (see `sizing.ts`). Kept selectable so
+ *   the backtest can A/B the two.
+ */
+export type SizingModel = "directional" | "edge";
+
+/** Edge-model parameters; required when the sizing model is "edge". */
+export interface EdgeSizingParams {
+  /** Model probability that Up wins, in [0, 1] (uncalibrated prior — T2). */
+  readonly pUp: Decimal;
+  /** Taker fee rate (verified crypto default; config `FEE_TAKER_RATE`). */
+  readonly takerFeeRate: Decimal;
+  /** Kelly fraction in (0, 1] (config `STRATEGY_KELLY_FRACTION`). */
+  readonly kellyFraction: Decimal;
+  /** Minimum net edge to trade at all (config `STRATEGY_MIN_EDGE`). */
+  readonly minEdge: Decimal;
+}
+
+export interface SizingSelection {
+  readonly model: SizingModel;
+  readonly edge?: EdgeSizingParams | undefined;
+}
 
 /** Risk limits the planner must never exceed. */
 export interface RebalanceRiskLimits {
@@ -112,6 +140,11 @@ export interface RebalancePlannerInput {
    * of the signal-derived target: `direction * confidence * maxResidual`.
    */
   readonly maxResidual: Decimal;
+  /**
+   * Sizing-model selection (T1). Defaults to the legacy `directional` model
+   * when omitted, preserving the historical behavior bit-for-bit.
+   */
+  readonly sizing?: SizingSelection | undefined;
   /** Wall-clock instant of the planning decision (injected, never read). */
   readonly at: Millis;
 }
@@ -278,13 +311,26 @@ export function planRebalance(input: RebalancePlannerInput): StrategyDecision {
   const residualDown = match.residualDown;
   const netResidual = decSub(residualUp, residualDown);
 
-  // ---- 2. Target residual from signal, phase, and risk ----
-  const target = targetResidual(
-    input.signal,
-    input.phase,
-    input.maxResidual,
-    risk.maxDirectionalShares,
-  );
+  // ---- 2. Target residual from the selected sizing model ----
+  const sizing = input.sizing;
+  const target =
+    sizing !== undefined && sizing.model === "edge" && sizing.edge !== undefined
+      ? (() => {
+          const r = edgeTargetResidual({
+            pUp: sizing.edge.pUp,
+            askUp: economics.upPrice,
+            askDown: economics.downPrice,
+            takerFeeRate: sizing.edge.takerFeeRate,
+            kellyFraction: sizing.edge.kellyFraction,
+            minEdge: sizing.edge.minEdge,
+            maxResidual: input.maxResidual,
+            maxDirectionalShares: risk.maxDirectionalShares,
+          });
+          return decCompare(r.target, ZERO) > 0
+            ? { up: r.target, down: ZERO }
+            : { up: ZERO, down: decNeg(r.target) };
+        })()
+      : targetResidual(input.signal, input.phase, input.maxResidual, risk.maxDirectionalShares);
   // Delta: what to add (per side) to move current -> target.
   const deltaUp = decSub(target.up, residualUp);
   const deltaDown = decSub(target.down, residualDown);

@@ -66,7 +66,7 @@ export function takerFeeQty(qty: Decimal, price: Decimal, feeRate: Decimal): Dec
 export function edgeNetOfTakerFee(pWin: Decimal, ask: Decimal, feeRate: Decimal): Decimal {
   const fee = takerFeePerShare(ask, feeRate);
   const cost = decAdd(ask, fee);
-  return decSub(pWin, cost) as Decimal;
+  return decSub(pWin, cost);
 }
 
 function isInvalidPrice(price: Decimal): boolean {

@@ -278,6 +278,23 @@ export class StrategyOrchestrator {
         availableCapital: decSub(this.appConfig.risk.maxTotalCapital, account.totalCapitalDeployed),
       },
       maxResidual: this.appConfig.strategy.maxResidual,
+      // T1: when the edge model is configured, size the target residual from
+      // the model probability vs the executable asks (fractional Kelly, net of
+      // the verified taker fee). The legacy directional model stays the
+      // default and is used untouched otherwise.
+      ...(this.appConfig.strategy.sizingModel === "edge"
+        ? {
+            sizing: {
+              model: "edge" as const,
+              edge: {
+                pUp: decFromString(signal.probabilityUp.toFixed(8)),
+                takerFeeRate: this.appConfig.fees.takerRate,
+                kellyFraction: this.appConfig.strategy.kellyFraction,
+                minEdge: this.appConfig.strategy.minEdge,
+              },
+            },
+          }
+        : {}),
       at: now,
     });
 

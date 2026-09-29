@@ -51,6 +51,17 @@ export interface AssetSignal {
   readonly direction: number;
   /** Confidence in [0, 1]. */
   readonly confidence: number;
+  /**
+   * Model probability that the underlying is higher at the end of the current
+   * 5-minute window than at its start, in [0, 1] (T1).
+   *
+   * UNVERIFIED as a calibrated probability: the raw score→probability map is
+   * the symmetric affine transform `(1 + direction) / 2`. It is NOT fitted to
+   * outcomes yet; `packages/calibration` (T2) will own the fitted mapping and
+   * consumers must treat this number as an uncalibrated prior until a
+   * calibration table is loaded.
+   */
+  readonly probabilityUp: number;
   /** Threshold-derived regime. */
   readonly regime: MarketRegime;
   /** Supporting metrics — every input the decision rested on. */
@@ -69,6 +80,11 @@ export interface SignalMetrics {
   readonly sampleCount: number;
   /** Book age, ms, when a book was attached. */
   readonly bookAgeMs: number | undefined;
+  /**
+   * Where `probabilityUp` came from: the raw score transform ("raw_score") or
+   * the uninformed 0.5 default ("default", used when there is no usable data).
+   */
+  readonly probabilitySource: "raw_score" | "default";
 }
 
 export type ComponentKey =
@@ -108,6 +124,11 @@ function clampConfidence(x: number): number {
   return Math.min(1, Math.max(0, x));
 }
 
+function clampProbability(x: number): number {
+  if (!Number.isFinite(x)) return 0.5;
+  return Math.min(1, Math.max(0, x));
+}
+
 function classifyRegime(volPerMin: number | undefined, config: SignalEngineConfig): MarketRegime {
   if (volPerMin === undefined) return "data-starved";
   if (volPerMin > config.volatileRegimeThreshold) return "volatile";
@@ -141,6 +162,7 @@ export function computeAssetSignal(
       timestamp: now,
       direction: 0,
       confidence: 0,
+      probabilityUp: 0.5,
       regime: "data-starved",
       metrics: {
         freshness: "stale",
@@ -150,6 +172,7 @@ export function computeAssetSignal(
         sampleCount: history.samples.length,
         bookAgeMs:
           history.book === undefined ? undefined : nowMs - (history.book.at as unknown as number),
+        probabilitySource: "default",
       },
     };
   }
@@ -163,6 +186,7 @@ export function computeAssetSignal(
       timestamp: now,
       direction: 0,
       confidence: 0,
+      probabilityUp: 0.5,
       regime: "data-starved",
       metrics: {
         freshness,
@@ -172,6 +196,7 @@ export function computeAssetSignal(
         sampleCount: history.samples.length,
         bookAgeMs:
           history.book === undefined ? undefined : nowMs - (history.book.at as unknown as number),
+        probabilitySource: "default",
       },
     };
   }
@@ -221,6 +246,7 @@ export function computeAssetSignal(
     timestamp: now,
     direction,
     confidence,
+    probabilityUp: clampProbability((1 + direction) / 2),
     regime,
     metrics: {
       freshness,
@@ -230,6 +256,7 @@ export function computeAssetSignal(
       sampleCount: history.samples.length,
       bookAgeMs:
         history.book === undefined ? undefined : nowMs - (history.book.at as unknown as number),
+      probabilitySource: "raw_score",
     },
   };
 }
