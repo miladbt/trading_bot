@@ -343,6 +343,7 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     sizingModel: strategy.STRATEGY_SIZING_MODEL,
     kellyFraction: money.kellyFraction,
     minEdge: money.minEdge,
+    calibrationFile: strategy.CALIBRATION_FILE,
   };
   const riskConfig: RiskConfig = {
     maxTotalCapital: money.maxTotalCapital,

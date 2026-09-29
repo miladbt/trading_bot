@@ -59,6 +59,12 @@ import {
   DEFAULT_SIGNAL_ENGINE_CONFIG,
   type SignalEngineConfig,
 } from "@bot/strategy";
+import {
+  deserializeCalibration,
+  evaluateCalibration,
+  serializeCalibration,
+  type CalibrationModel,
+} from "@bot/calibration";
 
 import type {
   DiscoveredMarket,
@@ -125,6 +131,8 @@ export class StrategyOrchestrator {
   private readonly ports: OrchestratorPorts;
   private readonly adapter: ExecutionAdapter;
   private readonly signalConfig: SignalEngineConfig;
+  /** Per-asset fitted calibration model (T2); undefined = raw prior in effect. */
+  private readonly calibrationByAsset = new Map<string, CalibrationModel>();
   private readonly auditLog: DecisionRecord[] = [];
   private decisionCounter = 0;
   /** Last new-order time per marketId (quote throttling). */
@@ -140,6 +148,13 @@ export class StrategyOrchestrator {
     readonly ports: OrchestratorPorts;
     readonly adapter: ExecutionAdapter;
     readonly signalConfig?: SignalEngineConfig | undefined;
+    /**
+     * Optional fitted calibration models (T2), keyed by asset symbol. When
+     * absent for an asset the signal engine's raw probability prior is used
+     * unchanged; the mapping's output crosses into sizing only via the
+     * Decimal boundary below (`decFromString(p.toFixed(8))`).
+     */
+    readonly calibration?: Readonly<Record<string, CalibrationModel>> | undefined;
   }) {
     const { config } = input;
     // Requirement: do not enable live trading. Refuse a live config outright.
@@ -154,6 +169,34 @@ export class StrategyOrchestrator {
     this.ports = input.ports;
     this.adapter = input.adapter;
     this.signalConfig = input.signalConfig ?? DEFAULT_SIGNAL_ENGINE_CONFIG;
+    if (input.calibration !== undefined) {
+      for (const [asset, model] of Object.entries(input.calibration)) {
+        this.calibrationByAsset.set(asset, model);
+      }
+    }
+  }
+
+  /** The loaded calibration model for an asset, or undefined (raw prior). */
+  calibrationOf(asset: string): CalibrationModel | undefined {
+    return this.calibrationByAsset.get(asset);
+  }
+
+  /** Versioned JSON export of every loaded calibration model (audit/soak use). */
+  calibrationJson(): Readonly<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const [asset, model] of this.calibrationByAsset) {
+      out[asset] = serializeCalibration(model);
+    }
+    return out;
+  }
+
+  /**
+   * Load a calibration model from its versioned JSON for one asset. Throws on
+   * a malformed artifact (fail closed: a bad file must not silently disable
+   * calibration when the operator asked for it).
+   */
+  loadCalibrationJson(asset: string, json: string): void {
+    this.calibrationByAsset.set(asset, deserializeCalibration(json));
   }
 
   /** The audit trail (bounded; oldest entries are dropped). */
@@ -235,6 +278,17 @@ export class StrategyOrchestrator {
       return [this.record(now, market, "skipped_no_signal", { regime: signal.regime })];
     }
 
+    // ---- 3b. Probability calibration (T2) ----
+    // Maps the raw score prior to the fitted mapping when a model is loaded
+    // for this asset; otherwise the raw prior passes through unchanged.
+    // Floats are allowed for this statistical step; the money path re-enters
+    // through the exact Decimal boundary at the sizing call below.
+    const calibration = this.calibrationByAsset.get(String(market.asset));
+    const probabilityUp =
+      calibration === undefined
+        ? signal.probabilityUp
+        : evaluateCalibration(calibration, signal.probabilityUp);
+
     // ---- 4. Market phase (canonical phase engine; AGENTS.md rule 0) ----
     const phaseResult = cyclePhaseAt(
       { startMs: market.startMs, endMs: market.endMs },
@@ -287,7 +341,7 @@ export class StrategyOrchestrator {
             sizing: {
               model: "edge" as const,
               edge: {
-                pUp: decFromString(signal.probabilityUp.toFixed(8)),
+                pUp: decFromString(probabilityUp.toFixed(8)),
                 takerFeeRate: this.appConfig.fees.takerRate,
                 kellyFraction: this.appConfig.strategy.kellyFraction,
                 minEdge: this.appConfig.strategy.minEdge,

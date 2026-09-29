@@ -16,6 +16,8 @@ import { decFromString, millis } from "@bot/domain";
 import { createExecutionAdapter, createSimulatedBook } from "@bot/execution";
 import { StrategyOrchestrator } from "@bot/orchestrator";
 import { DEFAULT_SIGNAL_ENGINE_CONFIG } from "@bot/strategy";
+import { deserializeCalibration } from "@bot/calibration";
+import { readFileSync } from "node:fs";
 
 import { SoakRunner, DEFAULT_SOAK_CONFIG } from "./runner.js";
 
@@ -159,6 +161,23 @@ function main(): void {
     takerFeeRate: decFromString("0.002"),
   });
 
+  // T2: optional calibration model per enabled asset, loaded from the
+  // configured versioned-JSON file. Absence of CALIBRATION_FILE leaves the
+  // raw prior in effect; a configured-but-bad file fails closed here.
+  const calibration: Record<string, ReturnType<typeof deserializeCalibration>> = {};
+  if (config.strategy.calibrationFile !== "") {
+    const raw = readFileSync(config.strategy.calibrationFile, "utf8");
+    const model = deserializeCalibration(raw);
+    calibration[String(model.asset)] = model;
+    log.info("calibration model loaded", {
+      file: config.strategy.calibrationFile,
+      asset: String(model.asset),
+      version: model.version,
+      method: model.method,
+      fittedAt: model.fit.lastAt,
+    });
+  }
+
   const orchestrator = new StrategyOrchestrator({
     config,
     ports: {
@@ -180,6 +199,7 @@ function main(): void {
     },
     adapter,
     signalConfig: DEFAULT_SIGNAL_ENGINE_CONFIG,
+    ...(Object.keys(calibration).length > 0 ? { calibration } : {}),
   });
 
   const runner = new SoakRunner({

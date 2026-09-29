@@ -10,6 +10,7 @@ import {
 import { decFromString, millis, type Decimal, type Millis } from "@bot/domain";
 import { DEFAULT_ASSETS, DEFAULT_MARKET, DEFAULT_RISK, DEFAULT_STRATEGY } from "@bot/shared";
 import { DEFAULT_SIGNAL_ENGINE_CONFIG } from "@bot/strategy";
+import { deserializeCalibration } from "@bot/calibration";
 import type { AssetSymbol } from "@bot/domain";
 
 import type {
@@ -577,5 +578,115 @@ describe("paper-mode guarantee and audit trail", () => {
       expect(rec.action).toBeTypeOf("string");
       expect(rec.detail).toBeTypeOf("object");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2: probability calibration
+// ---------------------------------------------------------------------------
+
+describe("probability calibration (T2)", () => {
+  /** Deterministic isotonic model: score 0.7 -> 0.1 (aggressively deflating). */
+  function deflatingModelJson(): string {
+    return JSON.stringify({
+      schema: 1,
+      version: "test-1.0.0",
+      method: "isotonic",
+      asset: "BTC",
+      scoreRange: { min: 0.5, max: 0.9 },
+      bins: [
+        { lower: 0.5, upper: 0.7, value: 0.9 },
+        { lower: 0.7, upper: 0.9, value: 0.1 },
+      ],
+      fit: {
+        sampleCount: 100,
+        firstAt: 1_700_000_000_000,
+        lastAt: 1_700_086_400_000,
+        brier: 0.2,
+        logLoss: 0.6,
+        reliability: [],
+      },
+    });
+  }
+
+  it("uses the raw prior unchanged when no calibration model is loaded", () => {
+    const ports = new MockPorts();
+    const m = market();
+    ports.markets = [m];
+    // 0.45 + 0.56 > 1: no complete-set edge, so any order must come from the
+    // residual-target path — exactly what calibration influences.
+    ports.setHealthyData(m, "0.45", "0.56");
+    ports.setUpTrend(BTC, millis(T0));
+
+    const { orchestrator, spy } = makeOrchestrator(ports);
+    expect(orchestrator.calibrationOf("BTC")).toBeUndefined();
+    orchestrator.tick(millis(T0));
+
+    expect(spy.calls).toHaveLength(1);
+    // Raw prior: bullish uptrend, pUp ≈ 1 -> Up order at the 0.45 ask.
+    expect(spy.calls[0]!.price.toString()).toBe(d("0.45").toString());
+  });
+
+  it("remaps pUp through the fitted model before edge sizing", () => {
+    const ports = new MockPorts();
+    const m = market();
+    ports.markets = [m];
+    // Sum 1.02: no set edge. Raw pUp ≈ 1 would buy Up at 0.12 (edge ≈ 0.78),
+    // but the deflating model maps it to 0.1, where BOTH sides price out:
+    // edgeUp = 0.1 - 0.12 - fee < 0 and edgeDown = 0.9 - 0.90 - fee < 0.
+    ports.setHealthyData(m, "0.12", "0.90");
+    ports.setUpTrend(BTC, millis(T0));
+
+    const paper = createExecutionAdapter("paper", {
+      tokens: ALL_TOKENS.map((tokenId) => ({
+        tokenId,
+        book: createSimulatedBook([{ price: d("0.12"), qty: d("500") }]),
+      })),
+      takerFeeRate: d("0.002"),
+    });
+    const spy = new SpyAdapter(paper);
+    const cfg = appConfig() as {
+      strategy: typeof DEFAULT_STRATEGY;
+    };
+    const orchestrator = new StrategyOrchestrator({
+      config: {
+        ...cfg,
+        strategy: { ...cfg.strategy, sizingModel: "edge" as const },
+      } as never,
+      ports,
+      adapter: spy,
+      signalConfig: DEFAULT_SIGNAL_ENGINE_CONFIG,
+      calibration: { BTC: deserializeCalibration(deflatingModelJson()) },
+    });
+    const decisions = orchestrator.tick(millis(T0));
+
+    // The deflating model maps pUp ~1 -> 0.1: both edges are negative, so no
+    // order may be submitted (the raw prior would have bought Up here).
+    expect(orchestrator.calibrationOf("BTC")).toBeDefined();
+    expect(spy.calls).toHaveLength(0);
+    expect(decisions.every((r) => r.action !== "submit_order")).toBe(true);
+  });
+
+  it("round-trips a loaded model through calibrationJson/loadCalibrationJson", () => {
+    const ports = new MockPorts();
+    const m = market();
+    ports.markets = [m];
+    ports.setHealthyData(m);
+    ports.setUpTrend(BTC, millis(T0));
+
+    const { orchestrator } = makeOrchestrator(ports);
+    const json = deflatingModelJson();
+    orchestrator.loadCalibrationJson("BTC", json);
+    const exported = orchestrator.calibrationJson();
+    expect(exported["BTC"]).toBeDefined();
+    expect(JSON.parse(exported["BTC"] ?? "{}")).toEqual(JSON.parse(json));
+  });
+
+  it("rejects a malformed calibration artifact (fail closed)", () => {
+    const { orchestrator } = makeOrchestrator(new MockPorts());
+    expect(() => orchestrator.loadCalibrationJson("BTC", "{ not json")).toThrow();
+    expect(() => orchestrator.loadCalibrationJson("BTC", JSON.stringify({ schema: 999 }))).toThrow(
+      /unsupported schema/,
+    );
   });
 });

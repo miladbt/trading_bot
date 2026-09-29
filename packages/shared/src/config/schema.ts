@@ -131,6 +131,13 @@ export const strategySchema = z.object({
   STRATEGY_KELLY_FRACTION: decimalString.default("0.25"),
   /** Minimum net edge (probability units) required to trade at all. */
   STRATEGY_MIN_EDGE: decimalString.default("0.01"),
+  /**
+   * Optional path to a serialized calibration model (T2, versioned JSON from
+   * @bot/calibration). Empty/unset disables calibration: the signal engine's
+   * raw probability prior is used unchanged. The file is loaded by the
+   * composition root (soak/backtest CLIs), never by the config loader.
+   */
+  CALIBRATION_FILE: z.string().trim().default(""),
 });
 
 // ---------------------------------------------------------------------------

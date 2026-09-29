@@ -1,5 +1,5 @@
 {
-  "name": "@bot/orchestrator",
+  "name": "@bot/calibration",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,13 +13,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@bot/calibration": "workspace:*",
-    "@bot/domain": "workspace:*",
-    "@bot/execution": "workspace:*",
-    "@bot/inventory": "workspace:*",
-    "@bot/risk": "workspace:*",
-    "@bot/shared": "workspace:*",
-    "@bot/strategy": "workspace:*"
+    "@bot/domain": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

@@ -131,6 +131,12 @@ export interface StrategyConfig {
   readonly kellyFraction: Decimal;
   /** Minimum net edge (probability units) required to trade at all. */
   readonly minEdge: Decimal;
+  /**
+   * Optional calibration-model file path (T2). Empty = no calibration; the
+   * signal engine's raw probability prior is used unchanged. The file itself
+   * is loaded by the composition root, not by the config layer.
+   */
+  readonly calibrationFile: string;
 }
 
 export const DEFAULT_STRATEGY: StrategyConfig = {
@@ -144,6 +150,7 @@ export const DEFAULT_STRATEGY: StrategyConfig = {
   sizingModel: "directional",
   kellyFraction: decFromString("0.25"),
   minEdge: decFromString("0.01"),
+  calibrationFile: "",
 } as const;
 
 // ---------------------------------------------------------------------------

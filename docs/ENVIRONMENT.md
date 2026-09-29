@@ -60,6 +60,23 @@ implemented, and no credentials should exist during scaffold phase.
 | `STRATEGY_MAX_ORDER_SIZE` | `50` | Hard cap on a single order's size (shares); USDC caps live in the risk group. |
 | `STRATEGY_MIN_QUOTE_LIFETIME_MS` | `2000` | Minimum resting time before a quote may be repriced. |
 | `STRATEGY_MIN_REPRICE_INTERVAL_MS` | `1000` | Minimum interval between repricing actions. |
+| `STRATEGY_SIZING_MODEL` | `directional` | Target-residual sizing model: `directional` (legacy `direction × confidence × maxResidual × phase`) or `edge` (fractional Kelly on the net edge vs the executable ask). |
+| `STRATEGY_KELLY_FRACTION` | `0.25` | Kelly fraction in (0, 1] for the `edge` model. |
+| `STRATEGY_MIN_EDGE` | `0.01` | Minimum net edge (probability units) required to trade at all; edge ≤ this means no order. |
+| `CALIBRATION_FILE` | _(empty)_ | Optional path to a probability-calibration model (versioned JSON produced by `@bot/calibration`, T2). Empty = raw signal prior, no calibration. A configured file that fails to parse refuses to start. |
+
+## Fees
+
+Verified Polymarket crypto fee schedule — see `docs/RESOLUTION_AND_FEES.md`
+for the official citations (docs.polymarket.com/trading/fees, retrieved
+2026-09-29). A per-market Gamma `feeSchedule`, when present, is authoritative
+at runtime.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `FEE_TAKER_RATE` | `0.07` | Crypto taker fee rate in `fee = C × rate × p × (1 − p)`. |
+| `FEE_TAKER_ONLY` | `true` | Docs: makers are never charged; only takers pay. |
+| `FEE_REBATE_RATE` | `0.2` | Informational maker-rebate share. |
 
 ## Risk
 

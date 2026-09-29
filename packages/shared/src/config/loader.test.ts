@@ -251,6 +251,16 @@ describe("sizing + fees config (T1/T3)", () => {
     expect(decToString(cfg.fees.takerRate)).toBe("0.07000000");
     expect(cfg.fees.takerOnly).toBe(true);
     expect(decToString(cfg.fees.rebateRate)).toBe("0.20000000");
+    // T2: no calibration file by default -> raw prior stays in effect.
+    expect(cfg.strategy.calibrationFile).toBe("");
+  });
+
+  it("accepts a calibration file path and trims surrounding whitespace", () => {
+    const cfg = loadConfig({
+      ...validEnv(),
+      CALIBRATION_FILE: " calibration/btc-5m-v1.json ",
+    });
+    expect(cfg.strategy.calibrationFile).toBe("calibration/btc-5m-v1.json");
   });
 
   it("accepts the edge model with an explicit fraction and min edge", () => {
