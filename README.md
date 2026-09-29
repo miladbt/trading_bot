@@ -2,8 +2,17 @@
 
 Trading bot for Polymarket BTC/ETH 5-minute up/down markets.
 
-**Status: scaffold only.** No Polymarket connectivity, no credentials, no strategy,
-and no live trading is implemented yet. Everything below is structure and tooling.
+**Status: paper-only research system, actively developed.** The full pipeline is
+implemented — discovery (public Gamma API), BTC/ETH spot data, deterministic
+signal engine with probability output and calibration, edge-based
+fractional-Kelly sizing, complete-set accumulation, risk engine (15 fail-closed
+checks), deterministic paper execution with an optional pessimistic fill model,
+state persistence, reconciliation, soak runner, and a replay/backtest stack.
+**Live trading does not exist in the codebase** (the execution factory throws
+on `live`; `TRADING_MODE=paper` and `LIVE_TRADING_ENABLED=false` are the only
+startable configuration) and nothing here implies the bot is live-ready — see
+`LIVE_READINESS.md` for the audited gap list. No Polymarket credentials exist
+or are required for anything in this repo.
 
 ## Layout
 
