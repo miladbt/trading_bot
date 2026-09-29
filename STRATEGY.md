@@ -164,14 +164,43 @@ Inputs: BTC/ETH signal stance, Polymarket lot inventory, the residual exposure
 it implies, the canonical market phase, realized volatility, and the risk
 budget. All injected; all data.
 
-Sizing model (deterministic, BigInt `Decimal`):
+Sizing model (deterministic; the float-valued delta model is quantized to
+exact BigInt `Decimal` at the engine boundary — every USDC computation
+downstream is BigInt-exact):
 
 ```
-exposure = |residualUp - residualDown| x markPrice        (USDC at risk)
+exposure = |residualUp - residualDown| x binaryDeltaPerShare
 urgency  = |direction| x confidence x phaseMultiplier(phase)
              x volatilityMultiplier(volatility)           (clamped to [0, 1])
 target   = min(exposure x urgency, riskBudget, exposure)
 ```
+
+**Binary-option delta exposure (T6).** An Up token is a cash-or-nothing
+binary call on the underlying with strike = the window's price-to-beat. With
+spot `S`, strike `K`, annualized realized vol `σ`, and time to expiry `T`, the
+per-share delta-equivalent USDC exposure is
+
+```
+binaryDeltaPerShare = φ(d2) / (σ √T),   d2 = [ln(S/K) − 0.5 σ² T] / (σ √T)
+```
+
+(see `packages/inventory/src/binary-delta.ts`, `normalCdf`/`normalPdf` via
+Abramowitz–Stegun erf). Properties, all test-encoded:
+
+- the delta **peaks at-the-money** and collapses in both moneyness tails —
+  the naive mark model overstates hedge demand away from the strike;
+- at-the-money it **spikes like 1/√T into expiry** — pin risk becomes
+  expensive to hedge right before settlement;
+- at expiry (T = 0) the model returns **0**: the window is settled, there is
+  nothing left to hedge.
+
+The legacy `exposure = |residual| × markPrice` sizing remains selectable via
+`exposureModel: "mark"` for A/B comparison, and is the automatic fallback
+when spot/strike/vol/time inputs are absent; an explicit `"delta"` request
+with missing inputs throws (fail closed). UNVERIFIED: the annualization
+convention for realized vol (Julian year, 365.25 d) and the lognormality
+assumption over a 5-minute horizon — configurable inputs, documented
+assumptions, no fabricated market data.
 
 The final `min(…, exposure)` term is the **no-leverage guarantee**: the hedge
 can at most fully cover the residual delta, never multiply it.

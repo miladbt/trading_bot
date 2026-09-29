@@ -357,3 +357,118 @@ describe("decideHedge — purity", () => {
     expect(down.qty).toBe(downBefore);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T6: binary-option delta exposure model
+// ---------------------------------------------------------------------------
+
+describe("decideHedge — binary delta exposure model (T6)", () => {
+  it("sizes exposure with the binary delta, not |residual| x markPrice", () => {
+    // 100 net Up shares; the naive mark model reports exactly 50 USDC.
+    const markInput = makeInput({});
+    const markDecision = decideHedge({ ...markInput, exposureModel: "mark" });
+    expect(decToString(markDecision.riskImpact.exposureUsdc)).toBe("50.00000000");
+
+    const deltaDecision = decideHedge({
+      ...makeInput({}),
+      exposureModel: "delta",
+      spot: 100_000,
+      strike: 100_000,
+      annualizedVol: 0.6,
+      msToExpiry: 150_000,
+    });
+    // At the money, 2.5 min out, 60% vol: the binary's delta notional is
+    // ~305 USDC/share (phi(0)/(sigma sqrt T)) — the pin-risk spike makes it
+    // FAR larger than the naive 50 USDC mark.
+    const exposure = Number(decToString(deltaDecision.riskImpact.exposureUsdc));
+    expect(exposure).toBeGreaterThan(50);
+    expect(exposure).toBeLessThan(31_000);
+  });
+
+  it("hedges MORE near expiry at the money (delta spike) under equal urgency", () => {
+    const mk = (ms: number) =>
+      decideHedge({
+        ...makeInput({ phase: "EARLY", maxNotionalUsdc: "1000000000" }),
+        exposureModel: "delta",
+        spot: 100_000,
+        strike: 100_000,
+        annualizedVol: 0.6,
+        msToExpiry: ms,
+      });
+    const early = mk(240_000);
+    const late = mk(30_000);
+    // Same urgency, uncapped budget: exposure grows ~1/sqrt(T) -> the model
+    // target grows with it (both far from the no-leverage/budget caps).
+    expect(decCompare(late.riskImpact.exposureUsdc, early.riskImpact.exposureUsdc)).toBeGreaterThan(
+      0,
+    );
+    expect(decCompare(late.targetSize, early.targetSize)).toBeGreaterThan(0);
+  });
+
+  it("hedges LESS away from the money deep in either tail", () => {
+    const mk = (spot: number) =>
+      decideHedge({
+        ...makeInput({}),
+        exposureModel: "delta",
+        spot,
+        strike: 100_000,
+        annualizedVol: 0.6,
+        msToExpiry: 150_000,
+      });
+    const atm = mk(100_000);
+    const tail = mk(97_000);
+    expect(decCompare(tail.riskImpact.exposureUsdc, atm.riskImpact.exposureUsdc)).toBeLessThan(0);
+  });
+
+  it("proposes no hedge at expiry: the binary has no remaining delta", () => {
+    const decision = decideHedge({
+      ...makeInput({}),
+      exposureModel: "delta",
+      spot: 100_000,
+      strike: 100_000,
+      annualizedVol: 0.6,
+      msToExpiry: 0,
+    });
+    expect(decision.required).toBe(false);
+    expect(decision.reason).toBe("no_residual_exposure");
+    expect(decToString(decision.targetSize)).toBe("0.00000000");
+  });
+
+  it("keeps the no-leverage and budget caps with the delta model", () => {
+    // Extreme pin: 1 second to expiry at the money -> huge delta notional,
+    // far above the 25 USDC budget.
+    const decision = decideHedge({
+      ...makeInput({ maxNotionalUsdc: "25" }),
+      exposureModel: "delta",
+      spot: 100_000,
+      strike: 100_000,
+      annualizedVol: 0.6,
+      msToExpiry: 1_000,
+    });
+    expect(decision.required).toBe(true);
+    expect(decToString(decision.targetSize)).toBe("25.00000000");
+    expect(decision.riskImpact.budgetCapped).toBe(true);
+    expect(decCompare(decision.targetSize, decision.riskImpact.exposureUsdc) <= 0).toBe(true);
+  });
+
+  it("falls back to the mark model when the delta model is unavailable (mark default in legacy callers)", () => {
+    // No delta inputs + no explicit model -> legacy behavior preserved.
+    const legacy = decideHedge(makeInput({}));
+    expect(decToString(legacy.riskImpact.exposureUsdc)).toBe("50.00000000");
+  });
+
+  it("requires spot/strike/vol/time when exposureModel is explicitly delta", () => {
+    expect(() => decideHedge({ ...makeInput({}), exposureModel: "delta" })).toThrow(
+      /requires spot, strike, annualizedVol/,
+    );
+    expect(() =>
+      decideHedge({
+        ...makeInput({}),
+        exposureModel: "delta",
+        spot: 100_000,
+        annualizedVol: 0.6,
+        msToExpiry: 1000,
+      }),
+    ).toThrow(/requires spot, strike, annualizedVol/);
+  });
+});

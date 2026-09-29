@@ -14,17 +14,27 @@
  * `HedgeDecision` with `required`, `asset`, `direction`, `targetSize`,
  * `reason`, `confidence`, and `riskImpact`.
  *
- * Sizing model (deterministic, BigInt `Decimal` only):
+ * Sizing model (T6): exposure is the **binary-option delta notional** of the
+ * residual (see `binary-delta.ts`), not the naive |residual| × markPrice:
  *
- *   exposure  = residualShares × markPrice          (USDC at risk)
+ *   exposure  = |residualShares| × φ(d2) / (σ √T)   (delta-equivalent USDC)
  *   urgency   = signal|direction| × confidence × phaseMultiplier(phase)
  *               × volatilityMultiplier(volatility)
  *   target    = exposure × urgency
  *   target    = min(target, riskBudget)             (never exceeds budget)
  *
- * The target is a **fraction** of exposure — always ≤ the exposure itself, so
- * the hedge can be interpreted as at most fully covering spot delta with no
- * leverage (no borrowing, no multiple-of-position sizing).
+ * with d2 = [ln(S/K) − 0.5σ²T] / (σ√T) from the current underlying spot S,
+ * the window strike K, annualized realized volatility σ, and time to expiry
+ * T. The binary delta peaks at-the-money and spikes like 1/√T into expiry
+ * (pin risk), and collapses in both moneyness tails — so the hedge demand
+ * concentrates exactly where the position is actually risky. At expiry the
+ * model returns 0 (settled: nothing left to hedge); the naive mark fallback
+ * (`exposureModel: "mark"`) stays selectable for A/B comparison and as the
+ * degraded mode when spot/strike data is unavailable.
+ *
+ * The float-valued delta model is converted to exact `Decimal` at this
+ * engine's boundary (`decFromString(x.toFixed(8))`); every USDC computation
+ * downstream remains BigInt Decimal per AGENTS.md rule 1.
  */
 
 import {
@@ -46,6 +56,7 @@ import {
 
 import { matchCompleteSets, type AcquisitionLot } from "./complete-set-engine.js";
 import { phaseMultiplier, type MarketPhase, type SignalStance } from "./rebalancing.js";
+import { binaryDeltaNotionalUsdc } from "./binary-delta.js";
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -94,6 +105,27 @@ export interface HedgeEngineInput {
   readonly externalHedgeEnabled?: boolean | undefined;
   /** Wall-clock instant of the decision (injected, never read). */
   readonly at: Millis;
+  /**
+   * T6 exposure model. "mark" (default when no delta inputs are given)
+   * keeps the legacy `|residual| × markPrice` sizing; "delta" sizes the
+   * residual exposure with the binary-option delta model from `spot`,
+   * `strike`, `annualizedVol`, and `msToExpiry`. Providing the four delta
+   * inputs without an explicit model selects "delta"; an explicit "delta"
+   * with missing inputs throws.
+   */
+  readonly exposureModel?: "delta" | "mark" | undefined;
+  /** Current underlying spot price, USDC (> 0). Required for "delta". */
+  readonly spot?: number | undefined;
+  /** Window strike (price-to-beat), USDC (> 0). Required for "delta". */
+  readonly strike?: number | undefined;
+  /**
+   * Annualized realized volatility as a fraction (> 0, e.g. 0.6). Required
+   * for "delta"; UNVERIFIED scaling: callers convert their realized vol of
+   * the window so far to an annualized figure with their own convention.
+   */
+  readonly annualizedVol?: number | undefined;
+  /** Milliseconds to expiry (>= 0). Required for "delta"; 0 = settled. */
+  readonly msToExpiry?: number | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +235,37 @@ export function decideHedge(input: HedgeEngineInput): HedgeDecision {
     throw new ValidationError("risk budget must be non-negative");
   }
 
+  // ---- 0. Exposure model selection (T6) ----
+  // Default: "mark" (the legacy |residual| × markPrice sizing) so existing
+  // callers behave unchanged. The delta model activates when explicitly
+  // selected OR implicitly when all four delta inputs are provided — but an
+  // explicit "delta" with missing inputs throws (fail closed, no silent
+  // fallback). The float model output is quantized to the exact Decimal
+  // boundary here; all downstream USDC math stays BigInt-exact.
+  const deltaInputsProvided =
+    input.spot !== undefined &&
+    input.strike !== undefined &&
+    input.annualizedVol !== undefined &&
+    input.msToExpiry !== undefined;
+  const exposureModel: "delta" | "mark" =
+    input.exposureModel ?? (deltaInputsProvided ? "delta" : "mark");
+  if (exposureModel === "delta" && !deltaInputsProvided) {
+    throw new ValidationError(
+      'exposureModel "delta" requires spot, strike, annualizedVol, and msToExpiry',
+    );
+  }
+  const deltaExposureUsdc = (): Decimal => {
+    const net = Number(decToString(netResidualShares));
+    const notional = binaryDeltaNotionalUsdc({
+      spot: input.spot as number,
+      strike: input.strike as number,
+      annualizedVol: input.annualizedVol as number,
+      msToExpiry: input.msToExpiry as number,
+      shares: net,
+    });
+    return decFromString(notional.toFixed(8));
+  };
+
   // ---- 1. Residual exposure from lot-level matching (never force-neutral) --
   const match = matchCompleteSets({
     upLots: input.upLots,
@@ -213,11 +276,20 @@ export function decideHedge(input: HedgeEngineInput): HedgeDecision {
   const residualDown = match.residualDown;
   const netResidualShares = decSub(residualUp, residualDown);
 
+  // Model exposure (T6): binary delta when configured, legacy mark otherwise.
+  const modelExposure = exposureModel === "delta" ? deltaExposureUsdc() : undefined;
+  const exposureUsdc =
+    modelExposure !== undefined
+      ? modelExposure
+      : decAbs(decMulRound(netResidualShares, input.markPrice));
+
   const noHedge = (reason: HedgeReason): HedgeDecision => {
-    const exposureUsdc =
+    const noHedgeExposureUsdc =
       reason === "no_residual_exposure"
         ? ZERO
-        : decMulRound(decAbs(netResidualShares), input.markPrice);
+        : modelExposure !== undefined
+          ? modelExposure
+          : decMulRound(decAbs(netResidualShares), input.markPrice);
     return {
       required: false,
       asset: input.asset,
@@ -226,9 +298,9 @@ export function decideHedge(input: HedgeEngineInput): HedgeDecision {
       reason,
       confidence: ZERO,
       riskImpact: {
-        exposureUsdc,
+        exposureUsdc: noHedgeExposureUsdc,
         hedgeNotionalUsdc: ZERO,
-        remainingExposureUsdc: exposureUsdc,
+        remainingExposureUsdc: noHedgeExposureUsdc,
         coverageFraction: ZERO,
         budgetCapped: false,
         atFullCoverage: false,
@@ -238,9 +310,7 @@ export function decideHedge(input: HedgeEngineInput): HedgeDecision {
     };
   };
 
-  const signedExposure = decMulRound(netResidualShares, input.markPrice);
-  const exposureUsdc = decAbs(signedExposure);
-  if (decIsZero(exposureUsdc)) {
+  if (decIsZero(netResidualShares) || decIsZero(exposureUsdc)) {
     return noHedge("no_residual_exposure");
   }
 
