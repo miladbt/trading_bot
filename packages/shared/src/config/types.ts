@@ -195,12 +195,28 @@ export interface ExecutionConfig {
   readonly maxRetries: number;
   /** WebSocket/data reconnect attempts before backing off hard. */
   readonly maxReconnects: number;
+  /**
+   * Fill simulation model for the paper adapter (T4). The loader default is
+   * "optimistic" for backward compatibility; the backtest/soak runners
+   * select "pessimistic" explicitly unless told otherwise.
+   */
+  readonly fillModel: "optimistic" | "pessimistic";
+  /** Pessimistic model: required trade-through beyond the order price. */
+  readonly tradeThrough: Decimal;
+  /** Pessimistic model: fraction of the contra level obtained per fill event, in (0, 1]. */
+  readonly queuePositionFactor: Decimal;
+  /** Pessimistic model: adverse mid move (price units) relaxing touch back to a fill. */
+  readonly adverseMoveThreshold: Decimal;
 }
 
 export const DEFAULT_EXECUTION: ExecutionConfig = {
   postOnly: true,
   maxRetries: 3,
   maxReconnects: 5,
+  fillModel: "optimistic",
+  tradeThrough: decFromString("0.001"),
+  queuePositionFactor: decFromString("0.5"),
+  adverseMoveThreshold: decFromString("0.01"),
 } as const;
 
 // ---------------------------------------------------------------------------

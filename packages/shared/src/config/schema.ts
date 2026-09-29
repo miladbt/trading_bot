@@ -177,6 +177,21 @@ export const executionSchema = z.object({
   EXECUTION_POST_ONLY: strictBoolean.default(true),
   EXECUTION_MAX_RETRIES: nonNegativeInt.default(3),
   EXECUTION_MAX_RECONNECTS: nonNegativeInt.default(5),
+  /**
+   * Fill simulation model for the paper adapter (T4). "optimistic" fills on
+   * touch (legacy); "pessimistic" requires a price trade-through plus a
+   * queue-position haircut, with adverse-selection relaxation. The backtest
+   * and soak runners DEFAULT TO "pessimistic" regardless of this value's
+   * default here (they select it explicitly per run); this flag exists so a
+   * comparison run can flip back to optimistic without code changes.
+   */
+  EXECUTION_FILL_MODEL: z.enum(["optimistic", "pessimistic"]).default("optimistic"),
+  /** Pessimistic model: required trade-through beyond the order price. */
+  EXECUTION_TRADE_THROUGH: decimalString.default("0.001"),
+  /** Pessimistic model: fraction of the level we get per fill event, (0, 1]. */
+  EXECUTION_QUEUE_POSITION_FACTOR: decimalString.default("0.5"),
+  /** Pessimistic model: adverse mid move (price units) that relaxes touch back to fill. */
+  EXECUTION_ADVERSE_MOVE_THRESHOLD: decimalString.default("0.01"),
 });
 
 // ---------------------------------------------------------------------------

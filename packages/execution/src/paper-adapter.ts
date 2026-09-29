@@ -35,8 +35,12 @@ import {
   ValidationError,
   decAdd,
   decCompare,
+  decDivRound,
+  decFromString,
   decIsZero,
   decMulRound,
+  decMulTrunc,
+  decNeg,
   decOne,
   decSub,
   decZero,
@@ -68,6 +72,49 @@ export interface PaperTokenConfig {
   readonly makerRebateRate?: Decimal | undefined;
 }
 
+/**
+ * Fill simulation model.
+ *
+ * - "optimistic": a resting order fills whenever its price crosses the best
+ *   contra level (touch) — the legacy model; flatters resting-quote PnL.
+ * - "pessimistic" (T4): fills require the market to TRADE THROUGH the order
+ *   price (not merely touch it), all fills are scaled down by a
+ *   queue-position factor, and adverse mid drift relaxes the requirement
+ *   back to touch (adverse selection: resting orders are swept when value
+ *   moves against them, not when the market kindly comes to them).
+ */
+export type FillModel = "optimistic" | "pessimistic";
+
+/** Parameters of the pessimistic fill model (T4). All validated. */
+export interface PessimisticFillParams {
+  /**
+   * Required price trade-through beyond the order price, in price units.
+   * A buy at P fills only when bestAsk <= P - tradeThrough (sell symmetric).
+   * Default 0.001 = one Polymarket crypto-market tick (orderPriceMinTickSize
+   * 0.001, verified from the Gamma API — see docs/RESOLUTION_AND_FEES.md).
+   */
+  readonly tradeThrough: Decimal;
+  /**
+   * Fraction of the available contra level we actually get per fill event,
+   * in (0, 1] — models queue position behind earlier resting size.
+   * Truncated (biased down) so we never take more than the level offers.
+   */
+  readonly queuePositionFactor: Decimal;
+  /**
+   * Adverse-selection relaxation: when the mid has moved AGAINST a resting
+   * order by at least this many price units since submission, the strict
+   * trade-through requirement drops back to touch (the drift sweeps the
+   * book through resting quotes). Disabled when `adverseMoveThreshold` is 0.
+   */
+  readonly adverseMoveThreshold: Decimal;
+}
+
+export const DEFAULT_PESSIMISTIC_FILL_PARAMS: PessimisticFillParams = {
+  tradeThrough: decFromString("0.001"), // one crypto-market tick (Gamma-verified)
+  queuePositionFactor: decFromString("0.5"),
+  adverseMoveThreshold: decFromString("0.01"),
+} as const;
+
 export interface PaperAdapterConfig {
   readonly tokens: readonly PaperTokenConfig[];
   /** Simulated submit latency: LIVE at `at + submitLatencyMs`. Default 0. */
@@ -80,6 +127,10 @@ export interface PaperAdapterConfig {
   readonly takerFeeRate?: Decimal | undefined;
   /** Maker rebate per limit-order fill (fraction of notional). Default 0. */
   readonly makerRebateRate?: Decimal | undefined;
+  /** Fill simulation model. Default "optimistic" (legacy behavior). */
+  readonly fillModel?: FillModel | undefined;
+  /** Pessimistic-model parameters; required defaults when fillModel is pessimistic. */
+  readonly pessimistic?: Partial<PessimisticFillParams> | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +159,8 @@ interface InternalOrder {
   rejectReason: string | undefined;
   takerFeeRate: Decimal;
   makerRebateRate: Decimal;
+  /** Mid price of the token's book at submission (pessimistic adverse-selection reference). */
+  midAtSubmit: Decimal | undefined;
 }
 
 /** Net fee rate for a maker (limit-order) fill: taker fee minus rebate, >= 0. */
@@ -129,6 +182,8 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
   private readonly postOnly: boolean;
   private readonly defaultTakerFeeRate: Decimal;
   private readonly defaultMakerRebateRate: Decimal;
+  private readonly fillModel: FillModel;
+  private readonly pessimistic: PessimisticFillParams;
   private readonly orders: Map<string, InternalOrder>;
   /** Consumed quantity per contra level: key `tokenId|contraSide|levelIndex`. */
   private readonly consumed: Map<string, Decimal>;
@@ -149,6 +204,21 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
     if (decCompare(this.defaultMakerRebateRate, decZero()) < 0) {
       throw new ValidationError("makerRebateRate must be non-negative");
     }
+    this.fillModel = config.fillModel ?? "optimistic";
+    const p = { ...DEFAULT_PESSIMISTIC_FILL_PARAMS, ...(config.pessimistic ?? {}) };
+    if (decCompare(p.tradeThrough, decZero()) < 0 || decCompare(p.tradeThrough, decOne()) >= 0) {
+      throw new ValidationError("pessimistic.tradeThrough must be in [0, 1)");
+    }
+    if (
+      decCompare(p.queuePositionFactor, decZero()) <= 0 ||
+      decCompare(p.queuePositionFactor, decOne()) > 0
+    ) {
+      throw new ValidationError("pessimistic.queuePositionFactor must be in (0, 1]");
+    }
+    if (decCompare(p.adverseMoveThreshold, decZero()) < 0) {
+      throw new ValidationError("pessimistic.adverseMoveThreshold must be non-negative");
+    }
+    this.pessimistic = p;
     this.orders = new Map();
     this.consumed = new Map();
   }
@@ -217,6 +287,7 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
       goLiveAt: (req.at + this.submitLatencyMs) as Millis,
       takerFeeRate: token.takerFeeRate ?? this.defaultTakerFeeRate,
       makerRebateRate: token.makerRebateRate ?? this.defaultMakerRebateRate,
+      midAtSubmit: midOf(token.book),
     });
     this.orders.set(order.clientOrderId, order);
     return { ok: true, clientOrderId: req.clientOrderId, reason: "accepted" };
@@ -265,6 +336,21 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
   // ---- Simulation driver ---------------------------------------------------
 
   /**
+   * Replace the simulated book for one token (driver input, T4). Backtests
+   * and soaks call this between ticks to move the market: replayed books,
+   * shifted quotes, new depth. Deterministic; takes effect on the next
+   * advanceClock. Unknown tokens throw (a moved book for a token the adapter
+   * does not know is a harness bug, not a market condition).
+   */
+  setBook(tokenId: string, book: SimulatedBook): void {
+    const token = this.tokens.get(tokenId);
+    if (token === undefined) {
+      throw new ValidationError(`setBook: unknown token ${tokenId}`);
+    }
+    (token as { book: SimulatedBook }).book = book;
+  }
+
+  /**
    * Advance the simulated clock and process everything that is due, in order:
    * submit latency (SUBMITTED → LIVE), cancel completion (CANCEL_REQUESTED →
    * CANCELLED once the latency elapses), then matching for working orders.
@@ -311,6 +397,22 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
 
   // ---- Internals -----------------------------------------------------------
 
+  /**
+   * Adverse mid move against a working order since submission, in price
+   * units (0 when the model is optimistic or no reference mid exists).
+   * A buy at the reference mid m0 suffers when the current mid m < m0:
+   * the move is (m0 − m). A sell suffers when m > m0: (m − m0).
+   */
+  private adverseMove(order: InternalOrder, currentMid: Decimal | undefined): Decimal {
+    if (order.midAtSubmit === undefined || currentMid === undefined) return decZero();
+    const drift = decSub(order.midAtSubmit, currentMid);
+    const adverse = order.side === "buy" ? drift : decNeg(drift);
+    if (decCompare(adverse, this.pessimistic.adverseMoveThreshold) < 0) {
+      return decZero();
+    }
+    return adverse;
+  }
+
   private newOrder(
     req: ExecutionOrderRequest,
     status: ExecutionStatus,
@@ -318,6 +420,7 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
       goLiveAt?: Millis;
       takerFeeRate?: Decimal;
       makerRebateRate?: Decimal;
+      midAtSubmit?: Decimal | undefined;
     },
   ): InternalOrder {
     return {
@@ -340,6 +443,7 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
       rejectReason: undefined,
       takerFeeRate: extra.takerFeeRate ?? this.defaultTakerFeeRate,
       makerRebateRate: extra.makerRebateRate ?? this.defaultMakerRebateRate,
+      midAtSubmit: extra.midAtSubmit ?? undefined,
     };
   }
 
@@ -347,6 +451,13 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
    * Fill one working order from the best crossed contra level that still has
    * unconsumed quantity. At most one level per tick — deterministic partial
    * fills level-by-level as the order works through the book.
+   *
+   * Pessimistic model (T4): the crossing condition is tightened to a
+   * trade-through (best ask at/below price − tradeThrough for buys; sell
+   * symmetric) UNLESS adverse selection applies — the mid having moved
+   * against the order by ≥ adverseMoveThreshold since submission relaxes the
+   * requirement back to touch. Fills are additionally scaled down by the
+   * queue-position factor (truncated), so resting behind size gets size.
    */
   private tryFill(order: InternalOrder, at: Millis): readonly ExecutionFill[] {
     const token = this.tokens.get(order.tokenId);
@@ -358,20 +469,43 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
     const contraSide = order.side === "buy" ? "asks" : "bids";
     const levels = token.book[contraSide];
 
+    // T4 adverse selection: how far has the mid moved AGAINST this order
+    // since it started working? A buy suffers when the mid falls.
+    const adverseRelaxation =
+      this.fillModel === "pessimistic" ? this.adverseMove(order, midOf(token.book)) : decZero();
+
     for (let i = 0; i < levels.length; i++) {
       const level = levels[i]!;
-      const crosses =
+      let crosses =
         order.side === "buy"
           ? decCompare(order.price, level.price) >= 0
           : decCompare(order.price, level.price) <= 0;
       if (!crosses) break; // levels are sorted; nothing further can cross
+
+      // Pessimistic tightening: require a genuine trade-through (price
+      // trades beyond us, not merely touches us) unless adverse selection
+      // has relaxed the requirement back to touch.
+      if (this.fillModel === "pessimistic" && decCompare(adverseRelaxation, decZero()) <= 0) {
+        const tt = this.pessimistic.tradeThrough;
+        crosses =
+          order.side === "buy"
+            ? decCompare(level.price, decSub(order.price, tt)) <= 0
+            : decCompare(level.price, decAdd(order.price, tt)) >= 0;
+        if (!crosses) continue; // touches but does not trade through — keep looking deeper
+      }
 
       const key = `${order.tokenId}|${contraSide}|${String(i)}`;
       const consumedQty = this.consumed.get(key) ?? decZero();
       const available = decSub(level.qty, consumedQty);
       if (decIsZero(available)) continue;
 
-      const take = decCompare(remaining, available) <= 0 ? remaining : available;
+      let take = decCompare(remaining, available) <= 0 ? remaining : available;
+      if (this.fillModel === "pessimistic") {
+        // Queue position: we get only our fraction of the event, truncated
+        // so rounding can never claim more than the level offers.
+        take = decMulTrunc(take, this.pessimistic.queuePositionFactor);
+      }
+      if (decIsZero(take)) continue; // queue factor truncated this event to dust
       this.consumed.set(key, decAdd(consumedQty, take));
 
       // Fee convention (see module doc): market fills are pure taker flow;
@@ -403,6 +537,14 @@ export class PaperExecutionAdapter implements ExecutionAdapter {
     }
     return [];
   }
+}
+
+/** Mid of a two-sided book; undefined when either side is empty. */
+function midOf(book: SimulatedBook): Decimal | undefined {
+  const bestBid = book.bids[0];
+  const bestAsk = book.asks[0];
+  if (bestBid === undefined || bestAsk === undefined) return undefined;
+  return decDivRound(decAdd(bestBid.price, bestAsk.price), decFromString("2"));
 }
 
 function snapshotOf(order: InternalOrder): ExecutionOrder {

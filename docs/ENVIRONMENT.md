@@ -97,6 +97,10 @@ at runtime.
 | `EXECUTION_POST_ONLY` | `true` | Prefer post-only (maker) orders. |
 | `EXECUTION_MAX_RETRIES` | `3` | Per-order submit/amend retry attempts. |
 | `EXECUTION_MAX_RECONNECTS` | `5` | Reconnect attempts before hard backoff. |
+| `EXECUTION_FILL_MODEL` | `optimistic` | Paper-adapter fill simulation model (T4): `optimistic` fills on touch; `pessimistic` requires a trade-through plus a queue-position haircut, with adverse-selection relaxation. Backtest/soak runners default to pessimistic for their own runs. |
+| `EXECUTION_TRADE_THROUGH` | `0.001` | Pessimistic model: required price trade-through beyond the order price (one crypto-market tick). |
+| `EXECUTION_QUEUE_POSITION_FACTOR` | `0.5` | Pessimistic model: fraction of the contra level obtained per fill event, (0, 1]. |
+| `EXECUTION_ADVERSE_MOVE_THRESHOLD` | `0.01` | Pessimistic model: adverse mid move (price units) since submission that relaxes the trade-through back to touch. |
 
 ## Hedge
 

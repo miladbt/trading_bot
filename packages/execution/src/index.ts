@@ -41,9 +41,12 @@ export {
 } from "./book.js";
 
 export {
+  DEFAULT_PESSIMISTIC_FILL_PARAMS,
   PaperExecutionAdapter,
+  type FillModel,
   type PaperAdapterConfig,
   type PaperTokenConfig,
+  type PessimisticFillParams,
 } from "./paper-adapter.js";
 
 export {

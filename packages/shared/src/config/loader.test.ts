@@ -50,6 +50,10 @@ function validEnv(): Record<string, string> {
     EXECUTION_POST_ONLY: "true",
     EXECUTION_MAX_RETRIES: "3",
     EXECUTION_MAX_RECONNECTS: "5",
+    EXECUTION_FILL_MODEL: "optimistic",
+    EXECUTION_TRADE_THROUGH: "0.001",
+    EXECUTION_QUEUE_POSITION_FACTOR: "0.5",
+    EXECUTION_ADVERSE_MOVE_THRESHOLD: "0.01",
     ENABLE_EXTERNAL_HEDGE: "false",
     API_PORT: "3001",
     DATABASE_URL: "postgres://localhost:5432/polymarket_bot",
@@ -273,6 +277,35 @@ describe("sizing + fees config (T1/T3)", () => {
     expect(cfg.strategy.sizingModel).toBe("edge");
     expect(decToString(cfg.strategy.kellyFraction)).toBe("0.40000000");
     expect(decToString(cfg.strategy.minEdge)).toBe("0.02000000");
+  });
+
+  it("accepts the pessimistic fill model with explicit T4 parameters", () => {
+    const cfg = loadConfig({
+      ...validEnv(),
+      EXECUTION_FILL_MODEL: "pessimistic",
+      EXECUTION_TRADE_THROUGH: "0.002",
+      EXECUTION_QUEUE_POSITION_FACTOR: "0.3",
+      EXECUTION_ADVERSE_MOVE_THRESHOLD: "0.02",
+    });
+    expect(cfg.execution.fillModel).toBe("pessimistic");
+    expect(decToString(cfg.execution.tradeThrough)).toBe("0.00200000");
+    expect(decToString(cfg.execution.queuePositionFactor)).toBe("0.30000000");
+    expect(decToString(cfg.execution.adverseMoveThreshold)).toBe("0.02000000");
+  });
+
+  it("rejects out-of-range T4 fill parameters", () => {
+    expect(() => loadConfig({ ...validEnv(), EXECUTION_QUEUE_POSITION_FACTOR: "0" })).toThrow(
+      /queuePositionFactor/,
+    );
+    expect(() => loadConfig({ ...validEnv(), EXECUTION_QUEUE_POSITION_FACTOR: "1.5" })).toThrow(
+      /queuePositionFactor/,
+    );
+    expect(() => loadConfig({ ...validEnv(), EXECUTION_TRADE_THROUGH: "1" })).toThrow(
+      /tradeThrough/,
+    );
+    expect(() => loadConfig({ ...validEnv(), EXECUTION_ADVERSE_MOVE_THRESHOLD: "-0.01" })).toThrow(
+      /adverseMoveThreshold/,
+    );
   });
 
   it("rejects out-of-range kelly fraction, min edge, and fee rate", () => {

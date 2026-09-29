@@ -204,6 +204,24 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
   const minEdge = parseDecimal("strategy", "minEdge", strategy.STRATEGY_MIN_EDGE, failures);
   const feeTakerRate = parseDecimal("fees", "takerRate", fees.FEE_TAKER_RATE, failures);
   const feeRebateRate = parseDecimal("fees", "rebateRate", fees.FEE_REBATE_RATE, failures);
+  const tradeThrough = parseDecimal(
+    "execution",
+    "tradeThrough",
+    execution.EXECUTION_TRADE_THROUGH,
+    failures,
+  );
+  const queuePositionFactor = parseDecimal(
+    "execution",
+    "queuePositionFactor",
+    execution.EXECUTION_QUEUE_POSITION_FACTOR,
+    failures,
+  );
+  const adverseMoveThreshold = parseDecimal(
+    "execution",
+    "adverseMoveThreshold",
+    execution.EXECUTION_ADVERSE_MOVE_THRESHOLD,
+    failures,
+  );
 
   if (failures.length > 0) {
     throw new ConfigError(`invalid configuration: ${failures.join("; ")}`);
@@ -225,6 +243,9 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     minEdge: minEdge as Decimal,
     feeTakerRate: feeTakerRate as Decimal,
     feeRebateRate: feeRebateRate as Decimal,
+    tradeThrough: tradeThrough as Decimal,
+    queuePositionFactor: queuePositionFactor as Decimal,
+    adverseMoveThreshold: adverseMoveThreshold as Decimal,
   };
 
   // ---------------------------------------------------------------------
@@ -266,6 +287,21 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     decCompare(money.feeRebateRate, decFromString("1")) > 0
   ) {
     failures.push("fees: rebateRate must be in [0, 1]");
+  }
+  if (
+    decCompare(money.tradeThrough, decFromString("0")) < 0 ||
+    decCompare(money.tradeThrough, decFromString("1")) >= 0
+  ) {
+    failures.push("execution: tradeThrough must be in [0, 1)");
+  }
+  if (
+    decCompare(money.queuePositionFactor, decFromString("0")) <= 0 ||
+    decCompare(money.queuePositionFactor, decFromString("1")) > 0
+  ) {
+    failures.push("execution: queuePositionFactor must be in (0, 1]");
+  }
+  if (decCompare(money.adverseMoveThreshold, decFromString("0")) < 0) {
+    failures.push("execution: adverseMoveThreshold must be non-negative");
   }
   if (market.MARKET_SETTLE_OFFSET_MS < market.MARKET_LIVE_OFFSET_MS) {
     failures.push("market: MARKET_SETTLE_OFFSET_MS must be >= MARKET_LIVE_OFFSET_MS");
@@ -358,6 +394,10 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     postOnly: execution.EXECUTION_POST_ONLY,
     maxRetries: execution.EXECUTION_MAX_RETRIES,
     maxReconnects: execution.EXECUTION_MAX_RECONNECTS,
+    fillModel: execution.EXECUTION_FILL_MODEL,
+    tradeThrough: money.tradeThrough,
+    queuePositionFactor: money.queuePositionFactor,
+    adverseMoveThreshold: money.adverseMoveThreshold,
   };
   const hedgeConfig: HedgeConfig = { externalHedgeEnabled: hedge.ENABLE_EXTERNAL_HEDGE };
   const feesConfig: FeesConfig = {
