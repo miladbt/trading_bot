@@ -1,0 +1,43 @@
+# Build context hygiene: nothing here is needed inside the image, and some
+# of it must never be (credentials, local state, VCS metadata).
+
+# Credentials & local configuration — MUST never enter the build context.
+.env
+.env.*
+!.env.example
+
+# VCS and CI metadata
+.git
+.github
+.gitignore
+.gitattributes
+
+# Dependencies and build output (installed/built inside the image)
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+
+# Test and coverage artifacts
+coverage
+**/coverage
+*.test.ts
+**/*.test.ts
+vitest.config.ts
+**/vitest.config.ts
+
+# Docs and reports (not needed at runtime)
+*.md
+!README.md
+docs
+replay-out
+**/replay-out
+
+# Deployment files themselves (not needed inside the image)
+docker-compose.yml
+.dockerignore
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

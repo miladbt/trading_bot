@@ -1,0 +1,8 @@
+dist
+node_modules
+coverage
+pnpm-lock.yaml
+*.md
+Dockerfile
+.dockerignore
+.env.example

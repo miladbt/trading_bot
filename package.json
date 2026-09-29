@@ -1,0 +1,34 @@
+{
+  "name": "polymarket-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Polymarket BTC/ETH 5-minute market trading bot (monorepo scaffold; no live trading yet).",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --no-bail run typecheck",
+    "test": "pnpm -r --no-bail run test",
+    "build": "pnpm -r --no-bail run build",
+    "dev:trader": "pnpm --filter @bot/trader dev",
+    "dev:api": "pnpm --filter @bot/api dev",
+    "replay": "pnpm --filter @bot/replay replay",
+    "soak": "pnpm --filter @bot/soak soak"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^22.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.0",
+    "@typescript-eslint/parser": "^8.44.0",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "typescript-eslint": "^8.44.0"
+  }
+}

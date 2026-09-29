@@ -1,0 +1,86 @@
+# polymarket-bot — production deployment (paper mode only)
+#
+# Safety model:
+# - The container starts in PAPER mode. TRADING_MODE=paper and
+#   LIVE_TRADING_ENABLED=false are baked into the image AND re-declared here.
+#   Live trading does not exist in the codebase (the execution factory throws
+#   on `live`), so this stack cannot trade regardless of env overrides.
+# - Secrets are injected through the environment ONLY (compose `secret:` /
+#   `env_file`); nothing is baked into images or committed.
+# - Exactly ONE port is published, bound to loopback on the host: the API.
+#   No other surface exists.
+#
+# Usage:
+#   docker compose up -d --build        # start
+#   docker compose ps                   # health/readiness status
+#   docker compose logs -f api          # JSON logs (json-file, rotated)
+#   docker compose stop                 # graceful stop -> SIGTERM -> drain
+#
+# The optional `state` volume persists anything future stateful services
+# (persistence package) write under /app/state inside the container.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: polymarket-bot-api:latest
+    container_name: polymarket-bot-api
+    restart: unless-stopped
+    init: true # redundant belt-and-braces with dumb-init in the image
+    # Paper mode is re-asserted here so an image rebuild can never silently
+    # change the safety posture. These are also enforced by the config loader.
+    environment:
+      TRADING_MODE: paper
+      LIVE_TRADING_ENABLED: "false"
+      ENABLE_EXTERNAL_HEDGE: "false"
+      NODE_ENV: production
+      LOG_LEVEL: info
+      API_PORT: "3001"
+      SHUTDOWN_GRACE_PERIOD_MS: "10000"
+    # Secrets via env file (git-ignored). Alternative: `secrets:` below for
+    # swarm-style file secrets mounted at /run/secrets/.
+    env_file:
+      - .env
+    ports:
+      # Loopback-only: reachable from the host machine, not the network.
+      - "127.0.0.1:3001:3001"
+    volumes:
+      # Persistent state for future stateful components. Written as the
+      # non-root bot user (uid 10001); bind-mount owned accordingly.
+      - bot-state:/app/state
+    # Resource limits: the bot is an I/O-bound control loop, not a
+    # compute job. 0.5 CPU / 256 MiB is generous headroom for the API.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      # Container-level check mirrors the image HEALTHCHECK with readiness:
+      # compose marks the service healthy only when /ready returns 200.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const p=process.env.API_PORT||'3001';fetch('http://127.0.0.1:'+p+'/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+# Future stateful services (postgres for @bot/persistence) attach to the same
+# volume and network; add them here with `expose:` (internal only), never
+# `ports:`.
+volumes:
+  bot-state:
