@@ -332,6 +332,13 @@ export class StrategyOrchestrator {
         availableCapital: decSub(this.appConfig.risk.maxTotalCapital, account.totalCapitalDeployed),
       },
       maxResidual: this.appConfig.strategy.maxResidual,
+      // T7: config-driven phase-multiplier curve (canonical default).
+      phaseMultipliers: {
+        early: this.appConfig.strategy.phaseMultipliers.early,
+        mid: this.appConfig.strategy.phaseMultipliers.mid,
+        late: this.appConfig.strategy.phaseMultipliers.late,
+        final: this.appConfig.strategy.phaseMultipliers.final,
+      },
       // T1: when the edge model is configured, size the target residual from
       // the model probability vs the executable asks (fractional Kelly, net of
       // the verified taker fee). The legacy directional model stays the

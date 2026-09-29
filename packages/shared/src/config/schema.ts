@@ -130,14 +130,20 @@ export const strategySchema = z.object({
   /** Fractional-Kelly fraction in (0, 1] for the "edge" model. */
   STRATEGY_KELLY_FRACTION: decimalString.default("0.25"),
   /** Minimum net edge (probability units) required to trade at all. */
-  STRATEGY_MIN_EDGE: decimalString.default("0.01"),
-  /**
+  STRATEGY_MIN_EDGE: decimalString.default("0.01") /**
    * Optional path to a serialized calibration model (T2, versioned JSON from
    * @bot/calibration). Empty/unset disables calibration: the signal engine's
    * raw probability prior is used unchanged. The file is loaded by the
    * composition root (soak/backtest CLIs), never by the config loader.
-   */
+   */,
   CALIBRATION_FILE: z.string().trim().default(""),
+  /**
+   * Phase multipliers on the directional target (T7): either a named preset
+   * - "canonical" (1.0/0.75/0.5/0.25), "flat" (1/1/1/1), "reversed"
+   * (0.25/0.5/0.75/1.0) - or four comma-separated values EARLY,MID,LATE,FINAL
+   * in [0, 1]. Default: canonical (the historically-shipped curve).
+   */
+  STRATEGY_PHASE_MULTIPLIERS: z.string().trim().default("canonical"),
 });
 
 // ---------------------------------------------------------------------------

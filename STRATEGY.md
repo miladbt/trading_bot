@@ -70,14 +70,19 @@ Inputs, all required by the task:
 | Configured max residual | `maxResidual` scales and caps the result |
 
 `phaseMultiplier` (later phase ⇒ smaller directional tolerance, because less
-time remains to correct a wrong bet):
+time remains to correct a wrong bet). **Config-driven since T7** via
+`STRATEGY_PHASE_MULTIPLIERS` — a named preset (`canonical` | `flat` |
+`reversed`) or an explicit `EARLY,MID,LATE,FINAL` CSV — so the backtest can
+compare curves without code changes. Default: the canonical curve below; no
+default change without backtest evidence (see T7 comparison in
+`reports/backtest-24h.md`):
 
-| Phase | Multiplier |
-| --- | --- |
-| `EARLY` | `1.00` |
-| `MID` | `0.75` |
-| `LATE` | `0.50` |
-| `FINAL` | `0.25` |
+| Phase | Canonical | Flat | Reversed |
+| --- | --- | --- | --- |
+| `EARLY` | `1.00` | `1.00` | `0.25` |
+| `MID` | `0.75` | `1.00` | `0.50` |
+| `LATE` | `0.50` | `1.00` | `0.75` |
+| `FINAL` | `0.25` | `1.00` | `1.00` |
 
 The **delta** is `target − current` per side; a positive delta is a buy intent
 (`rebalance_up` / `rebalance_down`), a negative delta is left untouched — the

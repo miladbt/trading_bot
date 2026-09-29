@@ -145,6 +145,11 @@ export interface RebalancePlannerInput {
    * when omitted, preserving the historical behavior bit-for-bit.
    */
   readonly sizing?: SizingSelection | undefined;
+  /**
+   * Phase-multiplier curve (T7) for the directional target. Defaults to the
+   * canonical 1.0/0.75/0.5/0.25 when omitted.
+   */
+  readonly phaseMultipliers?: PhaseMultiplierCurve | undefined;
   /** Wall-clock instant of the planning decision (injected, never read). */
   readonly at: Millis;
 }
@@ -218,20 +223,44 @@ function assertBounded(value: Decimal, lo: Decimal, hi: Decimal, name: string): 
 }
 
 /**
- * Phase multiplier on the signal-derived target residual: the later the phase,
- * the less directional exposure is justified (settlement approaches and there
- * is less time to correct a wrong directional bet).
+ * Phase multipliers on the signal-derived target residual (T7): the later the
+ * phase, the less directional exposure the canonical curve justifies
+ * (settlement approaches and there is less time to correct a wrong bet).
+ * Configurable since T7 (compare canonical vs flat vs reversed in the
+ * backtest); the canonical curve is the default.
  */
-export function phaseMultiplier(phase: MarketPhase): Decimal {
+export interface PhaseMultiplierCurve {
+  readonly early: Decimal;
+  readonly mid: Decimal;
+  readonly late: Decimal;
+  readonly final: Decimal;
+}
+
+/** The historically-shipped canonical curve: 1.0 / 0.75 / 0.5 / 0.25. */
+export const CANONICAL_PHASE_MULTIPLIERS: PhaseMultiplierCurve = {
+  early: ONE,
+  mid: decFromString("0.75"),
+  late: decFromString("0.5"),
+  final: decFromString("0.25"),
+} as const;
+
+/**
+ * Look up the multiplier for a phase from a curve. Falls back to the
+ * canonical curve when omitted (legacy behavior for existing callers).
+ */
+export function phaseMultiplier(
+  phase: MarketPhase,
+  curve: PhaseMultiplierCurve = CANONICAL_PHASE_MULTIPLIERS,
+): Decimal {
   switch (phase) {
     case "EARLY":
-      return ONE;
+      return curve.early;
     case "MID":
-      return decFromString("0.75");
+      return curve.mid;
     case "LATE":
-      return decFromString("0.5");
+      return curve.late;
     case "FINAL":
-      return decFromString("0.25");
+      return curve.final;
   }
 }
 
@@ -247,6 +276,7 @@ export function targetResidual(
   phase: MarketPhase,
   maxResidual: Decimal,
   maxDirectionalShares: Decimal,
+  multipliers: PhaseMultiplierCurve = CANONICAL_PHASE_MULTIPLIERS,
 ): { up: Decimal; down: Decimal } {
   assertBounded(signal.direction, MINUS_ONE, ONE, "signal direction");
   assertBounded(signal.confidence, ZERO, ONE, "signal confidence");
@@ -258,7 +288,7 @@ export function targetResidual(
   }
   const scaled = decMulRound(
     decMulRound(decMulRound(signal.direction, signal.confidence), maxResidual),
-    phaseMultiplier(phase),
+    phaseMultiplier(phase, multipliers),
   );
   const cap = decMin(maxResidual, maxDirectionalShares);
   const capped = decMin(decMax(scaled, decNeg(cap)), cap);
@@ -330,7 +360,13 @@ export function planRebalance(input: RebalancePlannerInput): StrategyDecision {
             ? { up: r.target, down: ZERO }
             : { up: ZERO, down: decNeg(r.target) };
         })()
-      : targetResidual(input.signal, input.phase, input.maxResidual, risk.maxDirectionalShares);
+      : targetResidual(
+          input.signal,
+          input.phase,
+          input.maxResidual,
+          risk.maxDirectionalShares,
+          input.phaseMultipliers ?? CANONICAL_PHASE_MULTIPLIERS,
+        );
   // Delta: what to add (per side) to move current -> target.
   const deltaUp = decSub(target.up, residualUp);
   const deltaDown = decSub(target.down, residualDown);

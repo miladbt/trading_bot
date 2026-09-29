@@ -38,6 +38,7 @@ import type {
   FeesConfig,
   HedgeConfig,
   MarketConfig,
+  PhaseMultipliers,
   RiskConfig,
   StrategyConfig,
   TradingConfig,
@@ -48,6 +49,7 @@ import {
   DEFAULT_FEES,
   DEFAULT_HEDGE,
   DEFAULT_MARKET,
+  DEFAULT_PHASE_MULTIPLIERS,
   DEFAULT_RISK,
   DEFAULT_STRATEGY,
   DEFAULT_TRADING,
@@ -223,6 +225,59 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     failures,
   );
 
+  // Phase multipliers (T7): named preset or explicit EARLY,MID,LATE,FINAL.
+  let phaseMultipliers: PhaseMultipliers = DEFAULT_PHASE_MULTIPLIERS;
+  {
+    const raw = strategy.STRATEGY_PHASE_MULTIPLIERS;
+    const preset = raw.toLowerCase();
+    if (preset === "flat") {
+      phaseMultipliers = {
+        early: decFromString("1"),
+        mid: decFromString("1"),
+        late: decFromString("1"),
+        final: decFromString("1"),
+      };
+    } else if (preset === "reversed") {
+      phaseMultipliers = {
+        early: decFromString("0.25"),
+        mid: decFromString("0.5"),
+        late: decFromString("0.75"),
+        final: decFromString("1"),
+      };
+    } else if (preset !== "canonical") {
+      const parts = raw.split(",").map((p) => p.trim());
+      if (parts.length !== 4) {
+        failures.push(
+          'strategy: STRATEGY_PHASE_MULTIPLIERS must be "canonical" | "flat" | "reversed" | "EARLY,MID,LATE,FINAL"',
+        );
+      } else {
+        const parsed: Decimal[] = [];
+        for (const part of parts) {
+          try {
+            const v = decFromString(part);
+            if (decCompare(v, decFromString("0")) < 0 || decCompare(v, decFromString("1")) > 0) {
+              failures.push(`strategy: phase multiplier "${part}" must be in [0, 1]`);
+            }
+            parsed.push(v);
+          } catch (e: unknown) {
+            failures.push(
+              `strategy: phase multiplier "${part}": ${e instanceof Error ? e.message : String(e)}`,
+            );
+            parsed.push(decFromString("0"));
+          }
+        }
+        if (parsed.length === 4) {
+          phaseMultipliers = {
+            early: parsed[0] as Decimal,
+            mid: parsed[1] as Decimal,
+            late: parsed[2] as Decimal,
+            final: parsed[3] as Decimal,
+          };
+        }
+      }
+    }
+  }
+
   if (failures.length > 0) {
     throw new ConfigError(`invalid configuration: ${failures.join("; ")}`);
   }
@@ -380,6 +435,7 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     kellyFraction: money.kellyFraction,
     minEdge: money.minEdge,
     calibrationFile: strategy.CALIBRATION_FILE,
+    phaseMultipliers,
   };
   const riskConfig: RiskConfig = {
     maxTotalCapital: money.maxTotalCapital,

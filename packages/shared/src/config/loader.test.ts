@@ -308,6 +308,37 @@ describe("sizing + fees config (T1/T3)", () => {
     );
   });
 
+  it("resolves phase-multiplier presets (T7)", () => {
+    const canonical = loadConfig({ ...validEnv(), STRATEGY_PHASE_MULTIPLIERS: "canonical" });
+    expect(decToString(canonical.strategy.phaseMultipliers.early)).toBe("1.00000000");
+    expect(decToString(canonical.strategy.phaseMultipliers.mid)).toBe("0.75000000");
+    expect(decToString(canonical.strategy.phaseMultipliers.late)).toBe("0.50000000");
+    expect(decToString(canonical.strategy.phaseMultipliers.final)).toBe("0.25000000");
+
+    const flat = loadConfig({ ...validEnv(), STRATEGY_PHASE_MULTIPLIERS: "flat" });
+    expect(decToString(flat.strategy.phaseMultipliers.final)).toBe("1.00000000");
+
+    const reversed = loadConfig({ ...validEnv(), STRATEGY_PHASE_MULTIPLIERS: "reversed" });
+    expect(decToString(reversed.strategy.phaseMultipliers.early)).toBe("0.25000000");
+    expect(decToString(reversed.strategy.phaseMultipliers.final)).toBe("1.00000000");
+
+    const explicit = loadConfig({ ...validEnv(), STRATEGY_PHASE_MULTIPLIERS: "1,0.9,0.6,0.3" });
+    expect(decToString(explicit.strategy.phaseMultipliers.mid)).toBe("0.90000000");
+    expect(decToString(explicit.strategy.phaseMultipliers.final)).toBe("0.30000000");
+  });
+
+  it("rejects bad phase-multiplier specs", () => {
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_PHASE_MULTIPLIERS: "1,0.5,0.25" })).toThrow(
+      /PHASE_MULTIPLIERS/,
+    );
+    expect(() =>
+      loadConfig({ ...validEnv(), STRATEGY_PHASE_MULTIPLIERS: "1,0.5,1.5,0.25" }),
+    ).toThrow(/must be in \[0, 1\]/);
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_PHASE_MULTIPLIERS: "1,0.5,x,0.25" })).toThrow(
+      /phase multiplier/,
+    );
+  });
+
   it("rejects out-of-range kelly fraction, min edge, and fee rate", () => {
     expect(() => loadConfig({ ...validEnv(), STRATEGY_KELLY_FRACTION: "0" })).toThrow(
       /kellyFraction/,

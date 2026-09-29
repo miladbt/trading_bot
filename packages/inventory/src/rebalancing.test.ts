@@ -531,3 +531,44 @@ describe("planRebalance — edge sizing model (T1)", () => {
     expect(decCompare(legacy.targetResidualUp, d("80"))).toBe(0); // 1 x 0.8 x 100 x 1.0
   });
 });
+
+// ---------------------------------------------------------------------------
+// T7: config-driven phase multipliers
+// ---------------------------------------------------------------------------
+
+describe("phase multipliers (T7)", () => {
+  it("flat curve removes the phase decay entirely", () => {
+    const flat = { early: d("1"), mid: d("1"), late: d("1"), final: d("1") };
+    for (const phase of ["EARLY", "MID", "LATE", "FINAL"] as const) {
+      const t = targetResidual(
+        { direction: d("1"), confidence: d("0.8") },
+        phase,
+        d("100"),
+        d("1000"),
+        flat,
+      );
+      expect(decToString(t.up)).toBe("80.00000000");
+    }
+  });
+
+  it("reversed curve increases exposure toward expiry (for A/B evaluation only)", () => {
+    const reversed = { early: d("0.25"), mid: d("0.5"), late: d("0.75"), final: d("1") };
+    const stance = { direction: d("1"), confidence: d("0.8") };
+    const finalT = targetResidual(stance, "FINAL", d("100"), d("1000"), reversed);
+    const earlyT = targetResidual(stance, "EARLY", d("100"), d("1000"), reversed);
+    expect(decToString(finalT.up)).toBe("80.00000000");
+    expect(decToString(earlyT.up)).toBe("20.00000000");
+  });
+
+  it("planRebalance honors a passed curve without changing the legacy default", () => {
+    const base = makePlan({ direction: "1", confidence: "0.8", phase: "FINAL" });
+    const legacy = planRebalance(base);
+    expect(decToString(legacy.targetResidualUp)).toBe("20.00000000"); // 1 x 0.8 x 100 x 0.25
+
+    const flatPlan = planRebalance({
+      ...base,
+      phaseMultipliers: { early: d("1"), mid: d("1"), late: d("1"), final: d("1") },
+    });
+    expect(decToString(flatPlan.targetResidualUp)).toBe("80.00000000");
+  });
+});

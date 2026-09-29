@@ -55,7 +55,13 @@ import {
 } from "@bot/domain";
 
 import { matchCompleteSets, type AcquisitionLot } from "./complete-set-engine.js";
-import { phaseMultiplier, type MarketPhase, type SignalStance } from "./rebalancing.js";
+import {
+  CANONICAL_PHASE_MULTIPLIERS,
+  phaseMultiplier,
+  type MarketPhase,
+  type PhaseMultiplierCurve,
+  type SignalStance,
+} from "./rebalancing.js";
 import { binaryDeltaNotionalUsdc } from "./binary-delta.js";
 
 // ---------------------------------------------------------------------------
@@ -126,6 +132,8 @@ export interface HedgeEngineInput {
   readonly annualizedVol?: number | undefined;
   /** Milliseconds to expiry (>= 0). Required for "delta"; 0 = settled. */
   readonly msToExpiry?: number | undefined;
+  /** Phase-multiplier curve (T7); defaults to the canonical curve. */
+  readonly phaseMultipliers?: PhaseMultiplierCurve | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +331,10 @@ export function decideHedge(input: HedgeEngineInput): HedgeDecision {
   const urgency = decMin(
     decMulRound(
       decMulRound(decAbs(input.signal.direction), input.signal.confidence),
-      decMulRound(phaseMultiplier(input.phase), volatilityMultiplier(input.volatility)),
+      decMulRound(
+        phaseMultiplier(input.phase, input.phaseMultipliers ?? CANONICAL_PHASE_MULTIPLIERS),
+        volatilityMultiplier(input.volatility),
+      ),
     ),
     ONE,
   );

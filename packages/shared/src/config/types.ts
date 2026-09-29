@@ -137,7 +137,28 @@ export interface StrategyConfig {
    * is loaded by the composition root, not by the config layer.
    */
   readonly calibrationFile: string;
+  /**
+   * Phase multipliers on the directional target (T7), EARLY/MID/LATE/FINAL,
+   * each in [0, 1]. Default is the canonical 1.0 / 0.75 / 0.5 / 0.25.
+   */
+  readonly phaseMultipliers: PhaseMultipliers;
 }
+
+/** Per-phase multipliers on the signal-derived target residual (T7). */
+export interface PhaseMultipliers {
+  readonly early: Decimal;
+  readonly mid: Decimal;
+  readonly late: Decimal;
+  readonly final: Decimal;
+}
+
+/** The historically-shipped multiplier curve. */
+export const DEFAULT_PHASE_MULTIPLIERS: PhaseMultipliers = {
+  early: decFromString("1.0"),
+  mid: decFromString("0.75"),
+  late: decFromString("0.5"),
+  final: decFromString("0.25"),
+} as const;
 
 export const DEFAULT_STRATEGY: StrategyConfig = {
   minCompleteSetGrossEdge: decFromString("0.01"),
@@ -151,6 +172,7 @@ export const DEFAULT_STRATEGY: StrategyConfig = {
   kellyFraction: decFromString("0.25"),
   minEdge: decFromString("0.01"),
   calibrationFile: "",
+  phaseMultipliers: DEFAULT_PHASE_MULTIPLIERS,
 } as const;
 
 // ---------------------------------------------------------------------------

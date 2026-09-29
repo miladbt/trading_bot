@@ -64,6 +64,7 @@ implemented, and no credentials should exist during scaffold phase.
 | `STRATEGY_KELLY_FRACTION` | `0.25` | Kelly fraction in (0, 1] for the `edge` model. |
 | `STRATEGY_MIN_EDGE` | `0.01` | Minimum net edge (probability units) required to trade at all; edge ≤ this means no order. |
 | `CALIBRATION_FILE` | _(empty)_ | Optional path to a probability-calibration model (versioned JSON produced by `@bot/calibration`, T2). Empty = raw signal prior, no calibration. A configured file that fails to parse refuses to start. |
+| `STRATEGY_PHASE_MULTIPLIERS` | `canonical` | Phase multipliers on the directional target (T7): `canonical` (1.0/0.75/0.5/0.25), `flat` (1/1/1/1), `reversed` (0.25/0.5/0.75/1.0), or four comma-separated values `EARLY,MID,LATE,FINAL` each in [0, 1]. |
 
 ## Fees
 

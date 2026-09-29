@@ -19,12 +19,14 @@ export {
 } from "./complete-set-engine.js";
 
 export {
+  CANONICAL_PHASE_MULTIPLIERS,
   phaseMultiplier,
   planRebalance,
   targetResidual,
   type CompleteSetEconomics,
   type EdgeSizingParams,
   type MarketPhase,
+  type PhaseMultiplierCurve,
   type RebalanceAction,
   type RebalancePlannerInput,
   type RebalanceRiskLimits,
