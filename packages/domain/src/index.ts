@@ -12,6 +12,12 @@ export type {
   UtcIso,
 } from "./brand.js";
 export { DomainError, InvalidTransitionError, ValidationError, isDomainError } from "./errors.js";
+export {
+  DEFAULT_CRYPTO_TAKER_FEE_RATE,
+  edgeNetOfTakerFee,
+  takerFeePerShare,
+  takerFeeQty,
+} from "./fees.js";
 export { err, ok, tryParse, type Result } from "./result.js";
 
 // Decimal (financial arithmetic)
