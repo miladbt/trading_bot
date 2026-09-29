@@ -121,6 +121,16 @@ export interface StrategyConfig {
   readonly minQuoteLifetimeMs: number;
   /** Minimum interval between repricing actions, ms. */
   readonly minRepriceIntervalMs: number;
+  /**
+   * Target-residual sizing model (T1): "directional" = legacy
+   * `direction x confidence x maxResidual x phase`; "edge" = fractional-Kelly
+   * on the net edge between the model probability and the executable ask.
+   */
+  readonly sizingModel: "directional" | "edge";
+  /** Kelly fraction in (0, 1] for the "edge" model. */
+  readonly kellyFraction: Decimal;
+  /** Minimum net edge (probability units) required to trade at all. */
+  readonly minEdge: Decimal;
 }
 
 export const DEFAULT_STRATEGY: StrategyConfig = {
@@ -131,6 +141,9 @@ export const DEFAULT_STRATEGY: StrategyConfig = {
   maxOrderSize: decFromString("50"),
   minQuoteLifetimeMs: 2_000,
   minRepriceIntervalMs: 1_000,
+  sizingModel: "directional",
+  kellyFraction: decFromString("0.25"),
+  minEdge: decFromString("0.01"),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -200,6 +213,29 @@ export const DEFAULT_HEDGE: HedgeConfig = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Fees
+// ---------------------------------------------------------------------------
+
+/**
+ * Verified Polymarket crypto fee schedule (see docs/RESOLUTION_AND_FEES.md
+ * for citations): fee = C x takerRate x p x (1 - p), takers only, fees
+ * rounded to 5 dp. Per-market Gamma `feeSchedule` overrides at runtime.
+ */
+export interface FeesConfig {
+  readonly takerRate: Decimal;
+  /** Docs: makers are never charged. */
+  readonly takerOnly: boolean;
+  /** Informational maker-rebate share. */
+  readonly rebateRate: Decimal;
+}
+
+export const DEFAULT_FEES: FeesConfig = {
+  takerRate: decFromString("0.07"),
+  takerOnly: true,
+  rebateRate: decFromString("0.2"),
+} as const;
+
+// ---------------------------------------------------------------------------
 // Runtime / services (pre-existing groups, kept for compatibility)
 // ---------------------------------------------------------------------------
 
@@ -228,6 +264,7 @@ export interface AppConfig {
   readonly risk: RiskConfig;
   readonly execution: ExecutionConfig;
   readonly hedge: HedgeConfig;
+  readonly fees: FeesConfig;
   readonly services: ServicesConfig;
 }
 

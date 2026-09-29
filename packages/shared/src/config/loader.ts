@@ -20,6 +20,7 @@ import {
   credentialsSchema,
   executionSchema,
   assetsSchema,
+  feesSchema,
   hedgeSchema,
   marketSchema,
   riskSchema,
@@ -34,6 +35,7 @@ import type {
   AssetsConfig,
   CredentialsStatus,
   ExecutionConfig,
+  FeesConfig,
   HedgeConfig,
   MarketConfig,
   RiskConfig,
@@ -43,6 +45,7 @@ import type {
 import {
   DEFAULT_ASSETS,
   DEFAULT_EXECUTION,
+  DEFAULT_FEES,
   DEFAULT_HEDGE,
   DEFAULT_MARKET,
   DEFAULT_RISK,
@@ -116,6 +119,7 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
   const risk = parseGroup("risk", riskSchema, env, failures);
   const execution = parseGroup("execution", executionSchema, env, failures);
   const hedge = parseGroup("hedge", hedgeSchema, env, failures);
+  const fees = parseGroup("fees", feesSchema, env, failures);
   const runtime = parseGroup("runtime", runtimeSchema, env, failures);
   const services = parseGroup("services", servicesSchema, env, failures);
   const credentials = parseGroup("credentials", credentialsSchema, env, failures);
@@ -128,6 +132,7 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     risk === undefined ||
     execution === undefined ||
     hedge === undefined ||
+    fees === undefined ||
     runtime === undefined ||
     services === undefined ||
     credentials === undefined
@@ -190,6 +195,15 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     failures,
   );
   const maxDailyLoss = parseDecimal("risk", "maxDailyLoss", risk.RISK_MAX_DAILY_LOSS, failures);
+  const kellyFraction = parseDecimal(
+    "strategy",
+    "kellyFraction",
+    strategy.STRATEGY_KELLY_FRACTION,
+    failures,
+  );
+  const minEdge = parseDecimal("strategy", "minEdge", strategy.STRATEGY_MIN_EDGE, failures);
+  const feeTakerRate = parseDecimal("fees", "takerRate", fees.FEE_TAKER_RATE, failures);
+  const feeRebateRate = parseDecimal("fees", "rebateRate", fees.FEE_REBATE_RATE, failures);
 
   if (failures.length > 0) {
     throw new ConfigError(`invalid configuration: ${failures.join("; ")}`);
@@ -207,6 +221,10 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     maxDirectionalExposure: maxDirectionalExposure as Decimal,
     maxOrphanInventory: maxOrphanInventory as Decimal,
     maxDailyLoss: maxDailyLoss as Decimal,
+    kellyFraction: kellyFraction as Decimal,
+    minEdge: minEdge as Decimal,
+    feeTakerRate: feeTakerRate as Decimal,
+    feeRebateRate: feeRebateRate as Decimal,
   };
 
   // ---------------------------------------------------------------------
@@ -227,6 +245,27 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
   }
   if (decCompare(money.maxDailyLoss, money.maxTotalCapital) > 0) {
     failures.push("risk: maxDailyLoss must be <= maxTotalCapital");
+  }
+  if (
+    decCompare(money.kellyFraction, decFromString("0")) <= 0 ||
+    decCompare(money.kellyFraction, decFromString("1")) > 0
+  ) {
+    failures.push("strategy: kellyFraction must be in (0, 1]");
+  }
+  if (decCompare(money.minEdge, decFromString("0")) < 0) {
+    failures.push("strategy: minEdge must be non-negative");
+  }
+  if (
+    decCompare(money.feeTakerRate, decFromString("0")) < 0 ||
+    decCompare(money.feeTakerRate, decFromString("1")) >= 0
+  ) {
+    failures.push("fees: takerRate must be in [0, 1)");
+  }
+  if (
+    decCompare(money.feeRebateRate, decFromString("0")) < 0 ||
+    decCompare(money.feeRebateRate, decFromString("1")) > 0
+  ) {
+    failures.push("fees: rebateRate must be in [0, 1]");
   }
   if (market.MARKET_SETTLE_OFFSET_MS < market.MARKET_LIVE_OFFSET_MS) {
     failures.push("market: MARKET_SETTLE_OFFSET_MS must be >= MARKET_LIVE_OFFSET_MS");
@@ -301,6 +340,9 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     maxOrderSize: money.maxOrderSize,
     minQuoteLifetimeMs: strategy.STRATEGY_MIN_QUOTE_LIFETIME_MS,
     minRepriceIntervalMs: strategy.STRATEGY_MIN_REPRICE_INTERVAL_MS,
+    sizingModel: strategy.STRATEGY_SIZING_MODEL,
+    kellyFraction: money.kellyFraction,
+    minEdge: money.minEdge,
   };
   const riskConfig: RiskConfig = {
     maxTotalCapital: money.maxTotalCapital,
@@ -317,6 +359,11 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     maxReconnects: execution.EXECUTION_MAX_RECONNECTS,
   };
   const hedgeConfig: HedgeConfig = { externalHedgeEnabled: hedge.ENABLE_EXTERNAL_HEDGE };
+  const feesConfig: FeesConfig = {
+    takerRate: money.feeTakerRate,
+    takerOnly: fees.FEE_TAKER_ONLY,
+    rebateRate: money.feeRebateRate,
+  };
   const runtimeConfig: RuntimeConfig = {
     env: runtime.NODE_ENV,
     logLevel: runtime.LOG_LEVEL,
@@ -336,6 +383,7 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
       risk: riskConfig,
       execution: executionConfig,
       hedge: hedgeConfig,
+      fees: feesConfig,
       services: servicesConfig,
     },
     credentials: { polymarketComplete },
@@ -354,6 +402,7 @@ export type { LogSafeConfig };
 export {
   DEFAULT_ASSETS,
   DEFAULT_EXECUTION,
+  DEFAULT_FEES,
   DEFAULT_HEDGE,
   DEFAULT_MARKET,
   DEFAULT_RISK,

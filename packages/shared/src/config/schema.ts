@@ -119,6 +119,33 @@ export const strategySchema = z.object({
   STRATEGY_MAX_ORDER_SIZE: decimalString.default("50"),
   STRATEGY_MIN_QUOTE_LIFETIME_MS: positiveInt.default(2_000),
   STRATEGY_MIN_REPRICE_INTERVAL_MS: positiveInt.default(1_000),
+  /**
+   * Target-residual sizing model (T1):
+   * - "directional": legacy `direction x confidence x maxResidual x phase`
+   *   (kept selectable for A/B comparison in the backtest).
+   * - "edge": fractional-Kelly sizing from the model probability vs the
+   *   executable ask net of fees; no trade when edge <= STRATEGY_MIN_EDGE.
+   */
+  STRATEGY_SIZING_MODEL: z.enum(["directional", "edge"]).default("directional"),
+  /** Fractional-Kelly fraction in (0, 1] for the "edge" model. */
+  STRATEGY_KELLY_FRACTION: decimalString.default("0.25"),
+  /** Minimum net edge (probability units) required to trade at all. */
+  STRATEGY_MIN_EDGE: decimalString.default("0.01"),
+});
+
+// ---------------------------------------------------------------------------
+// Fees (verified schedule: docs.polymarket.com/trading/fees, retrieved
+// 2026-09-29 — see docs/RESOLUTION_AND_FEES.md; per-market Gamma
+// `feeSchedule` is authoritative at runtime when present)
+// ---------------------------------------------------------------------------
+
+export const feesSchema = z.object({
+  /** Crypto taker fee rate in fee = C x rate x p x (1 - p). */
+  FEE_TAKER_RATE: decimalString.default("0.07"),
+  /** Docs: "Makers are never charged fees. Only takers pay fees." */
+  FEE_TAKER_ONLY: strictBoolean.default(true),
+  /** Informational maker-rebate share (docs: crypto 20%). */
+  FEE_REBATE_RATE: decimalString.default("0.2"),
 });
 
 // ---------------------------------------------------------------------------

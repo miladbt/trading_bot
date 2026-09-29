@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decCompare, decEquals, decFromString } from "@bot/domain";
+import { decCompare, decEquals, decFromString, decToString } from "@bot/domain";
 
 import { ConfigError, loadBotConfig, loadConfig, toLogSafeConfig } from "./loader.js";
 import {
@@ -239,6 +239,48 @@ describe("live-trading guard", () => {
     expect(credentials.polymarketComplete).toBe(true);
     // The credentials object carries only the boolean.
     expect(Object.keys(credentials)).toEqual(["polymarketComplete"]);
+  });
+});
+
+describe("sizing + fees config (T1/T3)", () => {
+  it("defaults to the legacy directional model and the verified fee schedule", () => {
+    const cfg = loadConfig(validEnv());
+    expect(cfg.strategy.sizingModel).toBe("directional");
+    expect(decToString(cfg.strategy.kellyFraction)).toBe("0.25000000");
+    expect(decToString(cfg.strategy.minEdge)).toBe("0.01000000");
+    expect(decToString(cfg.fees.takerRate)).toBe("0.07000000");
+    expect(cfg.fees.takerOnly).toBe(true);
+    expect(decToString(cfg.fees.rebateRate)).toBe("0.20000000");
+  });
+
+  it("accepts the edge model with an explicit fraction and min edge", () => {
+    const cfg = loadConfig({
+      ...validEnv(),
+      STRATEGY_SIZING_MODEL: "edge",
+      STRATEGY_KELLY_FRACTION: "0.4",
+      STRATEGY_MIN_EDGE: "0.02",
+    });
+    expect(cfg.strategy.sizingModel).toBe("edge");
+    expect(decToString(cfg.strategy.kellyFraction)).toBe("0.40000000");
+    expect(decToString(cfg.strategy.minEdge)).toBe("0.02000000");
+  });
+
+  it("rejects out-of-range kelly fraction, min edge, and fee rate", () => {
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_KELLY_FRACTION: "0" })).toThrow(
+      /kellyFraction/,
+    );
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_KELLY_FRACTION: "1.5" })).toThrow(
+      /kellyFraction/,
+    );
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_MIN_EDGE: "-0.01" })).toThrow(/minEdge/);
+    expect(() => loadConfig({ ...validEnv(), FEE_TAKER_RATE: "1" })).toThrow(/takerRate/);
+    expect(() => loadConfig({ ...validEnv(), FEE_TAKER_RATE: "-0.1" })).toThrow(/takerRate/);
+    expect(() => loadConfig({ ...validEnv(), FEE_REBATE_RATE: "1.2" })).toThrow(/rebateRate/);
+  });
+
+  it("exposes the fee schedule through the log-safe projection (no secrets)", () => {
+    const serialized = JSON.stringify(toLogSafeConfig(loadConfig(validEnv())));
+    expect(serialized).toContain("takerRate");
   });
 });
 
