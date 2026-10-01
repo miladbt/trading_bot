@@ -248,6 +248,46 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@22.20.4)(vite@7.3.6(@types/node@22.20.4)(tsx@4.23.15))
 
+  packages/backtest:
+    dependencies:
+      '@bot/calibration':
+        specifier: workspace:*
+        version: link:../calibration
+      '@bot/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@bot/execution':
+        specifier: workspace:*
+        version: link:../execution
+      '@bot/inventory':
+        specifier: workspace:*
+        version: link:../inventory
+      '@bot/orchestrator':
+        specifier: workspace:*
+        version: link:../orchestrator
+      '@bot/risk':
+        specifier: workspace:*
+        version: link:../risk
+      '@bot/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@bot/strategy':
+        specifier: workspace:*
+        version: link:../strategy
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.0
+        version: 22.20.4
+      tsx:
+        specifier: ^4.20.3
+        version: 4.23.15
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@22.20.4)(vite@7.3.6(@types/node@22.20.4)(tsx@4.23.15))
+
   packages/calibration:
     dependencies:
       '@bot/domain':
