@@ -335,6 +335,25 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@22.20.4)(vite@7.3.6(@types/node@22.20.4)(tsx@4.23.15))
 
+  packages/fair-value:
+    dependencies:
+      '@bot/calibration':
+        specifier: workspace:*
+        version: link:../calibration
+      '@bot/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.0
+        version: 22.20.4
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@22.20.4)(vite@7.3.6(@types/node@22.20.4)(tsx@4.23.15))
+
   packages/inventory:
     dependencies:
       '@bot/domain':
