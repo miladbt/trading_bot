@@ -6,3 +6,5 @@ pnpm-lock.yaml
 Dockerfile
 .dockerignore
 .env.example
+data/
+reports/*.json

@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "version": "walkforward-isotonic-v1",
+  "method": "isotonic",
+  "asset": "ETH",
+  "scoreRange": {
+    "min": 0.01798620996209155,
+    "max": 0.9820137900379085
+  },
+  "bins": [
+    {
+      "lower": 0.01798620996209155,
+      "upper": 0.1565387304472834,
+      "value": 0.47619047619047616
+    },
+    {
+      "lower": 0.1565387304472834,
+      "upper": 0.9820137900379085,
+      "value": 0.5555555555555556
+    },
+    {
+      "lower": 0.9820137900379085,
+      "upper": 0.9820137900379085,
+      "value": 0.6206896551724138
+    }
+  ],
+  "fit": {
+    "sampleCount": 68,
+    "firstAt": 1790745600000,
+    "lastAt": 1790765700000,
+    "brier": 0.24279596896229752,
+    "logLoss": 0.6786120598075865,
+    "reliability": [
+      {
+        "index": 0,
+        "lower": 0,
+        "upper": 0.1,
+        "center": 0.05,
+        "meanRaw": 0.05,
+        "meanPredicted": 0,
+        "observed": 0,
+        "count": 0
+      },
+      {
+        "index": 1,
+        "lower": 0.1,
+        "upper": 0.2,
+        "center": 0.15000000000000002,
+        "meanRaw": 0.15000000000000002,
+        "meanPredicted": 0,
+        "observed": 0,
+        "count": 0
+      },
+      {
+        "index": 2,
+        "lower": 0.2,
+        "upper": 0.30000000000000004,
+        "center": 0.25,
+        "meanRaw": 0.25,
+        "meanPredicted": 0,
+        "observed": 0,
+        "count": 0
+      },
+      {
+        "index": 3,
+        "lower": 0.30000000000000004,
+        "upper": 0.4,
+        "center": 0.35000000000000003,
+        "meanRaw": 0.35000000000000003,
+        "meanPredicted": 0,
+        "observed": 0,
+        "count": 0
+      },
+      {
+        "index": 4,
+        "lower": 0.4,
+        "upper": 0.5,
+        "center": 0.45,
+        "meanRaw": 0.45,
+        "meanPredicted": 0.47619047619047616,
+        "observed": 0.47619047619047616,
+        "count": 21
+      },
+      {
+        "index": 5,
+        "lower": 0.5,
+        "upper": 0.6000000000000001,
+        "center": 0.55,
+        "meanRaw": 0.55,
+        "meanPredicted": 0.5555555555555555,
+        "observed": 0.5555555555555556,
+        "count": 18
+      },
+      {
+        "index": 6,
+        "lower": 0.6000000000000001,
+        "upper": 0.7000000000000001,
+        "center": 0.6500000000000001,
+        "meanRaw": 0.6500000000000001,
+        "meanPredicted": 0.620689655172414,
+        "observed": 0.6206896551724138,
+        "count": 29
+      },
+      {
+        "index": 7,
+        "lower": 0.7000000000000001,
+        "upper": 0.8,
+        "center": 0.7500000000000001,
+        "meanRaw": 0.7500000000000001,
+        "meanPredicted": 0,
+        "observed": 0,
+        "count": 0
+      },
+      {
+        "index": 8,
+        "lower": 0.8,
+        "upper": 0.9,
+        "center": 0.8500000000000001,
+        "meanRaw": 0.8500000000000001,
+        "meanPredicted": 0,
+        "observed": 0,
+        "count": 0
+      },
+      {
+        "index": 9,
+        "lower": 0.9,
+        "upper": 1,
+        "center": 0.9500000000000001,
+        "meanRaw": 0.9500000000000001,
+        "meanPredicted": 0,
+        "observed": 0,
+        "count": 0
+      }
+    ]
+  }
+}

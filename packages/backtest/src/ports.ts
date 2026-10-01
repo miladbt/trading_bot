@@ -52,6 +52,8 @@ export interface BacktestAdapterState {
   deployed: Decimal;
   dailyLoss: Decimal;
   marketLoss: Map<string, Decimal>;
+  /** Exact USDC currently spent per market (capital at risk per market). */
+  marketCapital: Map<string, Decimal>;
 }
 
 export function createBacktestPorts(
@@ -129,7 +131,7 @@ export function createBacktestPorts(
     account: (): AccountSnapshot => ({
       openOrderCount: 0,
       totalCapitalDeployed: state.deployed,
-      marketCapitalByMarket: Object.fromEntries(state.marketLoss),
+      marketCapitalByMarket: Object.fromEntries(state.marketCapital),
       directionalExposureAfter: decFromString("0"),
       dailyLossUsdc: state.dailyLoss,
       marketLossByMarket: Object.fromEntries(state.marketLoss),

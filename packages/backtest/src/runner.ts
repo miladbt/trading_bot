@@ -16,8 +16,10 @@
 
 import {
   decAdd,
+  decCompare,
   decFromString,
   decMulRound,
+  decNeg,
   decSub,
   decZero,
   millis,
@@ -33,12 +35,12 @@ import {
 } from "@bot/execution";
 import { StrategyOrchestrator, type DecisionRecord } from "@bot/orchestrator";
 import type { AppConfig } from "@bot/shared";
-import { DEFAULT_SIGNAL_ENGINE_CONFIG } from "@bot/strategy";
+import { DEFAULT_SIGNAL_ENGINE_CONFIG, type SignalEngineConfig } from "@bot/strategy";
 import type { CalibrationModel } from "@bot/calibration";
 
 import { tokenPriceAt, type BacktestDataset, type BacktestMarket } from "./dataset.js";
 import { createBacktestPorts, type BacktestAdapterState } from "./ports.js";
-import { settleMarket } from "./settlement.js";
+import { hasResiduals, settleMarket, type SettlementResult } from "./settlement.js";
 
 export interface BacktestRunOptions {
   readonly config: AppConfig;
@@ -52,6 +54,12 @@ export interface BacktestRunOptions {
   readonly cancelLatencyMs?: number | undefined;
   /** Calibration models per asset (walk-forward artifacts). */
   readonly calibration?: Readonly<Record<string, CalibrationModel>> | undefined;
+  /**
+   * Signal-engine config override. The default is the production config; the
+   * 5-minute-cadence dataset needs widened freshness thresholds (disclosed in
+   * the report — see run-experiments.ts).
+   */
+  readonly signalConfig?: SignalEngineConfig | undefined;
 }
 
 export interface SetEdgeSample {
@@ -77,11 +85,15 @@ export interface BacktestRunResult {
   /** Net PnL = settlements − spend. Exact Decimal. */
   readonly netPnlUsdc: Decimal;
   /** Settled payouts per market slug. */
-  readonly settlements: readonly { slug: string; payout: Decimal; outcome: "UP" | "DOWN" }[];
+  readonly settlements: readonly SettlementResult[];
   /** T5: executable combined-ask samples with set edge after fees. */
   readonly setEdgeSamples: readonly SetEdgeSample[];
   /** Markets whose window overlapped the run (diagnostic). */
   readonly marketsSeen: number;
+  /** Realized PnL per settled market, in settlement order (exact Decimal). */
+  readonly marketPnls: readonly Decimal[];
+  /** Cumulative realized PnL after each settlement (equity curve, exact). */
+  readonly equityCurve: readonly Decimal[];
 }
 
 /**
@@ -125,20 +137,25 @@ export function runBacktest(
     deployed: decZero(),
     dailyLoss: decZero(),
     marketLoss: new Map(),
+    marketCapital: new Map(),
   };
 
   const orchestrator = new StrategyOrchestrator({
     config,
     ports: createBacktestPorts(dataset, state),
     adapter,
-    signalConfig: DEFAULT_SIGNAL_ENGINE_CONFIG,
+    signalConfig: options.signalConfig ?? DEFAULT_SIGNAL_ENGINE_CONFIG,
     ...(options.calibration !== undefined ? { calibration: options.calibration } : {}),
   });
 
   const allDecisions: DecisionRecord[] = [];
   const setEdgeSamples: SetEdgeSample[] = [];
+  const settlements: SettlementResult[] = [];
+  const equityCurve: Decimal[] = [];
+  const marketPnls: Decimal[] = [];
   let spent = decZero();
   let feesPaid = decZero();
+  let settledUsdc = decZero();
   let ticks = 0;
   // Sequence counter for deterministic, unique lot ids across the whole run.
   let fillSeq = 0;
@@ -146,12 +163,49 @@ export function runBacktest(
   // whenever a tick produced fills (no orchestrator hook, no module state).
   let tokenByOrder = new Map<string, string>();
 
+  /**
+   * Settle every market that expired at or before `at`, in order. Realized
+   * losses/payouts update the SAME risk state the pipeline reads (dailyLoss /
+   * marketLoss / deployed), so loss cutoffs are live during the run and
+   * settled capital recycles exactly like the 5-minute live cycle would.
+   */
+  const settleDue = (at: Millis): void => {
+    for (const market of dataset.markets) {
+      if (Number(market.endMs) > Number(at) || Number(market.endMs) > Number(options.windowEndMs)) {
+        continue;
+      }
+      if (settledSlugs.has(market.slug)) continue;
+      settledSlugs.add(market.slug);
+      const s = settleMarket(market, state);
+      settlements.push(s);
+      settledUsdc = decAdd(settledUsdc, s.payout);
+      state.deployed = decSub(state.deployed, s.costUsdc);
+      state.marketCapital.delete(market.slug);
+      if (hasResiduals(s)) {
+        // Loss counters are non-negative by contract (risk-engine validation
+        // throws otherwise): a losing market adds its loss; a winning market
+        // adds nothing (wins do not refund the daily loss budget).
+        const loss =
+          decCompare(s.realizedPnlUsdc, decZero()) < 0 ? decNeg(s.realizedPnlUsdc) : decZero();
+        state.dailyLoss = decAdd(state.dailyLoss, loss);
+        state.marketLoss.set(market.slug, loss);
+      }
+      marketPnls.push(s.realizedPnlUsdc);
+      equityCurve.push(decAdd(equityCurve.at(-1) ?? decZero(), s.realizedPnlUsdc));
+    }
+  };
+  const settledSlugs = new Set<string>();
+
   for (
     let now = Number(options.windowStartMs);
     now < Number(options.windowEndMs);
     now += options.tickMs
   ) {
     const at = millis(now);
+
+    // 0. Settle anything that expired since the last tick (before trading —
+    //    expiry is 12:00:00 sharp; capital frees up for this tick).
+    settleDue(at);
 
     // 1. Refresh the simulated books from the dataset at this instant.
     refreshBooks(adapter, dataset, at);
@@ -172,18 +226,13 @@ export function runBacktest(
       tokenByOrder = buildTokenLookup(adapter);
     }
     applyFillsToLots(dataset, state, fills, tokenByOrder, () => fillSeq++);
-
     // 4. T5 measurement: executable combined ask / set edge after fees.
     recordSetEdge(dataset, config, at, setEdgeSamples);
 
     ticks += 1;
   }
-
-  // Settlement: only markets whose window ended inside (or before) the run.
-  const settlements = dataset.markets
-    .filter((m) => Number(m.endMs) <= Number(options.windowEndMs))
-    .map((m) => settleMarket(m, state));
-  const settlementUsdc = settlements.reduce<Decimal>((acc, s) => decAdd(acc, s.payout), decZero());
+  // Final sweep for markets expiring exactly at the window end.
+  settleDue(millis(Number(options.windowEndMs)));
 
   return {
     ticks,
@@ -191,9 +240,11 @@ export function runBacktest(
     fills: adapter.getFills(),
     spentUsdc: spent,
     feesUsdc: feesPaid,
-    settlementUsdc,
-    netPnlUsdc: decSub(settlementUsdc, spent),
+    settlementUsdc: settledUsdc,
+    netPnlUsdc: decSub(settledUsdc, spent),
     settlements,
+    equityCurve,
+    marketPnls,
     setEdgeSamples,
     marketsSeen: dataset.markets.length,
   };
@@ -279,6 +330,13 @@ function applyFillsToLots(
       up: isUp ? [...held.up, lot] : held.up,
       down: isUp ? held.down : [...held.down, lot],
     });
+    // Account the fill's exact cost into the risk state the pipeline reads.
+    const cost = decAdd(decMulRound(fill.price, fill.qty), fill.fee);
+    state.deployed = decAdd(state.deployed, cost);
+    state.marketCapital.set(
+      market.slug,
+      decAdd(state.marketCapital.get(market.slug) ?? decZero(), cost),
+    );
   }
 }
 
