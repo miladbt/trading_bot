@@ -65,6 +65,12 @@ implemented, and no credentials should exist during scaffold phase.
 | `STRATEGY_MIN_EDGE` | `0.01` | Minimum net edge (probability units) required to trade at all; edge ≤ this means no order. |
 | `CALIBRATION_FILE` | _(empty)_ | Optional path to a probability-calibration model (versioned JSON produced by `@bot/calibration`, T2). Empty = raw signal prior, no calibration. A configured file that fails to parse refuses to start. |
 | `STRATEGY_PHASE_MULTIPLIERS` | `canonical` | Phase multipliers on the directional target (T7): `canonical` (1.0/0.75/0.5/0.25), `flat` (1/1/1/1), `reversed` (0.25/0.5/0.75/1.0), or four comma-separated values `EARLY,MID,LATE,FINAL` each in [0, 1]. |
+| `STRATEGY_PROBABILITY_SOURCE` | `signal` | Strategy V2 (docs/STRATEGY_V2.md): `signal` = legacy behavior, unchanged. `fair-value-v2` = fee/buffer-aware mispricing rule behind the model-quality gate; **requires** `STRATEGY_SIZING_MODEL=edge` (loader cross-validates, otherwise refuses to start). |
+| `STRATEGY_FV2_MIN_MISPRICING` | `0.01` | V2: minimum buffered, fee-aware mispricing (probability units) required to trade a side. |
+| `STRATEGY_FV2_SLIPPAGE_BUFFER` | `0.003` | V2 execution-cost buffer: expected slippage (probability units per share). |
+| `STRATEGY_FV2_ADVERSE_BUFFER` | `0.003` | V2 execution-cost buffer: adverse-selection allowance (probability units per share). |
+| `STRATEGY_FV2_UNCERTAINTY_BUFFER` | `0.003` | V2 execution-cost buffer: execution-uncertainty allowance (probability units per share). |
+| `STRATEGY_FV2_GATE_FILE` | _(empty)_ | Optional V2 model-quality gate artifact (versioned JSON from the backtest's `evaluateGate`). **Empty = gate closed = no model-driven trades** (fail closed). Complete-set arbitrage and inventory rebalancing are unaffected by the gate. |
 
 ## Fees
 

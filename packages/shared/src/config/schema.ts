@@ -144,6 +144,30 @@ export const strategySchema = z.object({
    * in [0, 1]. Default: canonical (the historically-shipped curve).
    */
   STRATEGY_PHASE_MULTIPLIERS: z.string().trim().default("canonical"),
+  /**
+   * Strategy V2 (docs/STRATEGY_V2.md) probability source:
+   * - "signal": the existing signal-engine prior (optionally calibrated).
+   * - "fair-value-v2": the @bot/fair-value model with the fee/buffer-aware
+   *   mispricing rule and the model-quality gate. Requires
+   *   STRATEGY_SIZING_MODEL=edge (cross-validated in the loader). Without a
+   *   gate artifact (STRATEGY_FV2_GATE_FILE) the gate is closed: no
+   *   model-driven trades (fail closed); CSA and inventory rebalancing are
+   *   unaffected.
+   */
+  STRATEGY_PROBABILITY_SOURCE: z.enum(["signal", "fair-value-v2"]).default("signal"),
+  /** V2: minimum buffered, fee-aware mispricing (probability units) to trade. */
+  STRATEGY_FV2_MIN_MISPRICING: decimalString.default("0.01"),
+  /** V2 execution-cost buffers (probability units per share), all >= 0. */
+  STRATEGY_FV2_SLIPPAGE_BUFFER: decimalString.default("0.003"),
+  STRATEGY_FV2_ADVERSE_BUFFER: decimalString.default("0.003"),
+  STRATEGY_FV2_UNCERTAINTY_BUFFER: decimalString.default("0.003"),
+  /**
+   * Optional path to the V2 model-quality gate artifact (versioned JSON
+   * written by the backtest from @bot/fair-value `evaluateGate`). Empty = no
+   * artifact = gate closed (fail closed). Loaded by the composition root,
+   * never by the config loader.
+   */
+  STRATEGY_FV2_GATE_FILE: z.string().trim().default(""),
 });
 
 // ---------------------------------------------------------------------------

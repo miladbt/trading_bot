@@ -204,6 +204,30 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     failures,
   );
   const minEdge = parseDecimal("strategy", "minEdge", strategy.STRATEGY_MIN_EDGE, failures);
+  const fv2MinMispricing = parseDecimal(
+    "strategy",
+    "fv2MinMispricing",
+    strategy.STRATEGY_FV2_MIN_MISPRICING,
+    failures,
+  );
+  const fv2SlippageBuffer = parseDecimal(
+    "strategy",
+    "fv2SlippageBuffer",
+    strategy.STRATEGY_FV2_SLIPPAGE_BUFFER,
+    failures,
+  );
+  const fv2AdverseBuffer = parseDecimal(
+    "strategy",
+    "fv2AdverseBuffer",
+    strategy.STRATEGY_FV2_ADVERSE_BUFFER,
+    failures,
+  );
+  const fv2UncertaintyBuffer = parseDecimal(
+    "strategy",
+    "fv2UncertaintyBuffer",
+    strategy.STRATEGY_FV2_UNCERTAINTY_BUFFER,
+    failures,
+  );
   const feeTakerRate = parseDecimal("fees", "takerRate", fees.FEE_TAKER_RATE, failures);
   const feeRebateRate = parseDecimal("fees", "rebateRate", fees.FEE_REBATE_RATE, failures);
   const tradeThrough = parseDecimal(
@@ -296,6 +320,10 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     maxDailyLoss: maxDailyLoss as Decimal,
     kellyFraction: kellyFraction as Decimal,
     minEdge: minEdge as Decimal,
+    fv2MinMispricing: fv2MinMispricing as Decimal,
+    fv2SlippageBuffer: fv2SlippageBuffer as Decimal,
+    fv2AdverseBuffer: fv2AdverseBuffer as Decimal,
+    fv2UncertaintyBuffer: fv2UncertaintyBuffer as Decimal,
     feeTakerRate: feeTakerRate as Decimal,
     feeRebateRate: feeRebateRate as Decimal,
     tradeThrough: tradeThrough as Decimal,
@@ -330,6 +358,24 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
   }
   if (decCompare(money.minEdge, decFromString("0")) < 0) {
     failures.push("strategy: minEdge must be non-negative");
+  }
+  for (const [name, value] of [
+    ["fv2MinMispricing", money.fv2MinMispricing],
+    ["fv2SlippageBuffer", money.fv2SlippageBuffer],
+    ["fv2AdverseBuffer", money.fv2AdverseBuffer],
+    ["fv2UncertaintyBuffer", money.fv2UncertaintyBuffer],
+  ] as const) {
+    if (decCompare(value, decFromString("0")) < 0) {
+      failures.push(`strategy: ${name} must be non-negative`);
+    }
+  }
+  if (
+    strategy.STRATEGY_PROBABILITY_SOURCE === "fair-value-v2" &&
+    strategy.STRATEGY_SIZING_MODEL !== "edge"
+  ) {
+    failures.push(
+      "strategy: probabilitySource=fair-value-v2 requires sizingModel=edge (V2 sizes by buffered mispricing)",
+    );
   }
   if (
     decCompare(money.feeTakerRate, decFromString("0")) < 0 ||
@@ -436,6 +482,12 @@ export function loadBotConfig(source: EnvInput = process.env): LoadedConfig {
     minEdge: money.minEdge,
     calibrationFile: strategy.CALIBRATION_FILE,
     phaseMultipliers,
+    probabilitySource: strategy.STRATEGY_PROBABILITY_SOURCE,
+    fv2MinMispricing: money.fv2MinMispricing,
+    fv2SlippageBuffer: money.fv2SlippageBuffer,
+    fv2AdverseBuffer: money.fv2AdverseBuffer,
+    fv2UncertaintyBuffer: money.fv2UncertaintyBuffer,
+    fv2GateFile: strategy.STRATEGY_FV2_GATE_FILE,
   };
   const riskConfig: RiskConfig = {
     maxTotalCapital: money.maxTotalCapital,

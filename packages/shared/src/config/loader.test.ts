@@ -356,6 +356,46 @@ describe("sizing + fees config (T1/T3)", () => {
     const serialized = JSON.stringify(toLogSafeConfig(loadConfig(validEnv())));
     expect(serialized).toContain("takerRate");
   });
+
+  it("defaults to the legacy signal source with V2 off and the gate closed", () => {
+    const cfg = loadConfig(validEnv());
+    expect(cfg.strategy.probabilitySource).toBe("signal");
+    expect(decToString(cfg.strategy.fv2MinMispricing)).toBe("0.01000000");
+    expect(decToString(cfg.strategy.fv2SlippageBuffer)).toBe("0.00300000");
+    expect(cfg.strategy.fv2GateFile).toBe("");
+  });
+
+  it("accepts the V2 source when paired with the edge sizing model", () => {
+    const cfg = loadConfig({
+      ...validEnv(),
+      STRATEGY_PROBABILITY_SOURCE: "fair-value-v2",
+      STRATEGY_SIZING_MODEL: "edge",
+      STRATEGY_FV2_GATE_FILE: " data/gate/btc-v1.json ",
+    });
+    expect(cfg.strategy.probabilitySource).toBe("fair-value-v2");
+    expect(cfg.strategy.fv2GateFile).toBe("data/gate/btc-v1.json");
+  });
+
+  it("rejects the V2 source with the legacy directional model (cross-validation)", () => {
+    expect(() =>
+      loadConfig({ ...validEnv(), STRATEGY_PROBABILITY_SOURCE: "fair-value-v2" }),
+    ).toThrow(/fair-value-v2 requires sizingModel=edge/);
+  });
+
+  it("rejects negative V2 buffers and mispricing thresholds", () => {
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_FV2_MIN_MISPRICING: "-0.01" })).toThrow(
+      /fv2MinMispricing/,
+    );
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_FV2_SLIPPAGE_BUFFER: "-0.001" })).toThrow(
+      /fv2SlippageBuffer/,
+    );
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_FV2_ADVERSE_BUFFER: "-0.001" })).toThrow(
+      /fv2AdverseBuffer/,
+    );
+    expect(() => loadConfig({ ...validEnv(), STRATEGY_FV2_UNCERTAINTY_BUFFER: "-0.001" })).toThrow(
+      /fv2UncertaintyBuffer/,
+    );
+  });
 });
 
 describe("hedge guard", () => {

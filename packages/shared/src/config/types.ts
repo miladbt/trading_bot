@@ -142,6 +142,24 @@ export interface StrategyConfig {
    * each in [0, 1]. Default is the canonical 1.0 / 0.75 / 0.5 / 0.25.
    */
   readonly phaseMultipliers: PhaseMultipliers;
+  /**
+   * Strategy V2 (docs/STRATEGY_V2.md): which probability source drives
+   * model-driven trading. "signal" = unchanged legacy behavior.
+   * "fair-value-v2" = fee/buffer-aware mispricing rule behind the
+   * model-quality gate; requires sizingModel === "edge" (loader-enforced).
+   */
+  readonly probabilitySource: "signal" | "fair-value-v2";
+  /** V2: minimum buffered mispricing (probability units) to trade a side. */
+  readonly fv2MinMispricing: Decimal;
+  /** V2 execution-cost buffers (probability units per share), each >= 0. */
+  readonly fv2SlippageBuffer: Decimal;
+  readonly fv2AdverseBuffer: Decimal;
+  readonly fv2UncertaintyBuffer: Decimal;
+  /**
+   * V2 gate-artifact path; empty = no artifact = gate CLOSED (fail closed).
+   * The file is loaded by the composition root, not the config layer.
+   */
+  readonly fv2GateFile: string;
 }
 
 /** Per-phase multipliers on the signal-derived target residual (T7). */
@@ -173,6 +191,12 @@ export const DEFAULT_STRATEGY: StrategyConfig = {
   minEdge: decFromString("0.01"),
   calibrationFile: "",
   phaseMultipliers: DEFAULT_PHASE_MULTIPLIERS,
+  probabilitySource: "signal",
+  fv2MinMispricing: decFromString("0.01"),
+  fv2SlippageBuffer: decFromString("0.003"),
+  fv2AdverseBuffer: decFromString("0.003"),
+  fv2UncertaintyBuffer: decFromString("0.003"),
+  fv2GateFile: "",
 } as const;
 
 // ---------------------------------------------------------------------------
