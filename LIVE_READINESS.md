@@ -6,7 +6,8 @@
 below are re-proven on every test run by
 `packages/orchestrator/src/readiness-structural.test.ts` (T8), which greps the
 repository source itself; behavioral claims cite the targeted tests beside each
-source. Counts in this file are current as of the T8 commit (686 tests).
+source. Counts in this file are current as of the T11 commit (692 tests; the
+count is itself structurally verified against the live test suite).
 
 **Live trading remains DISABLED.** `TRADING_MODE=paper` and
 `LIVE_TRADING_ENABLED=false` are the shipped defaults and were not changed.
@@ -202,7 +203,7 @@ cross-restart order-id dedupe).
 
 ### 17–19. Tests / typecheck / lint — VERIFIED
 
-- **Tests:** 686 passing at the T8 commit (0 failures), across 14 workspaces;
+- **Tests:** 692 passing at the T11 commit (0 failures), across 14 workspaces;
   the structural suite itself is part of the run.
 - **Typecheck:** 0 errors across all workspaces (strict mode, `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`).
