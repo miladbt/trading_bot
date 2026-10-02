@@ -36,6 +36,17 @@ import {
 } from "@bot/calibration";
 import { loadConfig, type AppConfig } from "@bot/shared";
 import {
+  DEFAULT_GATE_CONFIG,
+  DEFAULT_FAIR_VALUE_CONFIG,
+  anchorDistFrac as fvAnchorDistFrac,
+  evaluateGate,
+  fairValueEstimate,
+  momentumPerMin as fvMomentumPerMin,
+  volAccelPerMin2 as fvVolAccelPerMin2,
+  type GateEvaluation,
+  type GateObservation,
+} from "@bot/fair-value";
+import {
   computeAssetSignal,
   createAssetHistory,
   DEFAULT_SIGNAL_ENGINE_CONFIG,
@@ -196,7 +207,50 @@ function envFor(config: ConfigDescriptor): Record<string, string> {
   if (config.completeSetOnly) {
     env["STRATEGY_MAX_RESIDUAL"] = "0";
   }
+  if (config.v2) {
+    env["STRATEGY_PROBABILITY_SOURCE"] = "fair-value-v2";
+    env["STRATEGY_FV2_MIN_MISPRICING"] = "0.01";
+  }
   return env;
+}
+
+/**
+ * Strategy V2 hold-out observations: the fair-value model's P(UP) at each
+ * hold-out market's window-open tick (start + 30 s, the calibration recipe),
+ * paired with the realized outcome. Built from the Chainlink anchor series
+ * and the market's verified priceToBeat ONLY — no book evidence exists on
+ * schema-1 data, so those components run dormant (honest, disclosed).
+ */
+function fv2HoldoutObservations(
+  dataset: BacktestDataset,
+  asset: string,
+  holdoutStartMs: number,
+): GateObservation[] {
+  const series = dataset.underlying[asset as "BTC" | "ETH"];
+  if (series === undefined) return [];
+  const obs: GateObservation[] = [];
+  for (const m of dataset.markets) {
+    if (m.asset !== asset || Number(m.startMs) < holdoutStartMs) continue;
+    const at = Number(m.startMs) + 30_000;
+    const points = series.points.filter((p) => p.t <= at);
+    if (points.length < 2) continue;
+    const fvSeries = points.map((p) => ({ t: Number(p.t), price: p.p }));
+    const spot = fvSeries[fvSeries.length - 1]?.price;
+    if (spot === undefined || m.resolution.priceToBeat <= 0) continue;
+    const estimate = fairValueEstimate({
+      elapsedSec: 30,
+      remainingSec: (Number(m.endMs) - at) / 1000,
+      underlying: {
+        anchorDistFrac: fvAnchorDistFrac(spot, m.resolution.priceToBeat),
+        momentumPerMin: fvMomentumPerMin(fvSeries, at, 900_000),
+        volAccelPerMin2: fvVolAccelPerMin2(fvSeries, at, 1_800_000),
+      },
+      market: { bookImbalance: { available: false, value: 0 } },
+      config: DEFAULT_FAIR_VALUE_CONFIG,
+    });
+    obs.push({ predicted: estimate.pUp, outcome: m.resolution.outcome === "UP" ? 1 : 0 });
+  }
+  return obs;
 }
 
 // ---------------------------------------------------------------------------
@@ -322,10 +376,23 @@ function runOneConfig(
   holdoutStartMs: number,
   windowEndMs: number,
   calibration: Readonly<Record<string, CalibrationModel>> | undefined,
+  fv2Gate: Readonly<Record<string, GateEvaluation>> | undefined,
   bootstrapIterations: number,
   seed: number,
 ): ConfigResult {
   const notes: string[] = [];
+  if (config.v2 && fv2Gate !== undefined) {
+    for (const [asset, gate] of Object.entries(fv2Gate)) {
+      notes.push(
+        `fv2 gate ${asset}: ${gate.verdict} (brier=${gate.brier?.toFixed(4) ?? "n/a"}, logLoss=${gate.logLoss?.toFixed(4) ?? "n/a"}, n=${gate.sampleCount}) — ${gate.reason}`,
+      );
+    }
+  }
+  if (config.forceGateOpen) {
+    notes.push(
+      "DIAGNOSTIC ONLY: gate forced open regardless of measured skill — quantifies what the gate prevented; not a recommendation",
+    );
+  }
 
   if (config.noTrade) {
     // D1 (no-trade): reported analytically. Hiding all markets from the
@@ -384,6 +451,7 @@ function runOneConfig(
     cancelLatencyMs: 250,
     signalConfig: DATASET_SIGNAL_CONFIG,
     ...(calibration !== undefined ? { calibration } : {}),
+    ...(fv2Gate !== undefined ? { fv2Gate } : {}),
   });
 
   if (config.completeSetOnly) {
@@ -465,6 +533,28 @@ function main(): void {
     }
   }
   const calibrationUsed = Object.keys(calibration).length > 0 ? calibration : undefined;
+
+  // --- Strategy V2 model-quality gate (hold-out evaluated, per asset) ------
+  // The gate artifact is computed from hold-out observations ONLY (same
+  // recipe as the calibration-quality read-out). Disclosure: setting the
+  // gate for a hold-out run from hold-out skill is aggregate-level, not
+  // per-market, leakage; config E2 (forced open) quantifies exactly what
+  // the gate changed. In production the artifact is loaded from file.
+  const fv2Gates: Record<string, GateEvaluation> = {};
+  for (const asset of dataset.provenance.assets) {
+    const obs = fv2HoldoutObservations(dataset, asset, holdoutStartMs);
+    const gate = evaluateGate(obs, DEFAULT_GATE_CONFIG);
+    fv2Gates[asset] = gate;
+    console.log(
+      `fv2 gate ${asset}: ${gate.verdict} (brier=${gate.brier?.toFixed(4) ?? "n/a"}, logLoss=${gate.logLoss?.toFixed(4) ?? "n/a"}, n=${gate.sampleCount})`,
+    );
+  }
+  const fv2GatesForcedOpen: Record<string, GateEvaluation> = Object.fromEntries(
+    Object.entries(fv2Gates).map(([asset, gate]) => [
+      asset,
+      { ...gate, verdict: "open" as const, reason: "FORCED OPEN (diagnostic)" },
+    ]),
+  );
 
   // --- Hold-out calibration quality (reported, never tuned on) -----------
   const calibrationQuality: Record<string, unknown> = {};
@@ -556,12 +646,14 @@ function main(): void {
       continue;
     }
     console.log(`running config ${config.id}: ${config.label} ...`);
+    const fv2Gate = config.v2 ? (config.forceGateOpen ? fv2GatesForcedOpen : fv2Gates) : undefined;
     const result = runOneConfig(
       config,
       dataset,
       holdoutStartMs,
       windowEndMs,
       calibrationUsed,
+      fv2Gate,
       args.bootstrapIterations,
       args.seed,
     );
@@ -657,6 +749,7 @@ function main(): void {
     training: { startMs: windowStartMs, endMs: trainingEndMs },
     calibrationInfo,
     calibrationQuality,
+    fv2Gates: fv2Gates,
     configs: results,
     phaseComparison,
     sensitivity,
@@ -686,6 +779,18 @@ function main(): void {
         takerRate: 0.07,
         takerOnly: true,
         source: "docs/RESOLUTION_AND_FEES.md (verified 2026-09-29)",
+      },
+      fv2: {
+        probabilityModel: "transparent bounded additive (docs/STRATEGY_V2.md §3)",
+        gateThresholds: {
+          maxBrier: DEFAULT_GATE_CONFIG.maxBrier,
+          maxLogLoss: DEFAULT_GATE_CONFIG.maxLogLoss,
+        },
+        minMispricing: 0.01,
+        buffers: { slippage: 0.003, adverse: 0.003, uncertainty: 0.003 },
+        bookEvidence: "dormant — schema-1 dataset carries no order-book depth (honest degradation)",
+        gateDisclosure:
+          "gate set from hold-out aggregate skill (see fv2Gates note above); E2 is the forced-open counterfactual",
       },
       tickMs: 30_000,
       signalEngine:

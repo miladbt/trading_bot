@@ -18,7 +18,7 @@ import type { BacktestRunResult } from "./runner.js";
 export type FillModelLabel = "optimistic" | "pessimistic";
 
 export interface ConfigDescriptor {
-  readonly id: "A" | "B" | "C" | "D1" | "D2" | "D3";
+  readonly id: "A" | "B" | "C" | "D1" | "D2" | "D3" | "E" | "E2";
   readonly label: string;
   readonly sizingModel: "directional" | "edge";
   readonly fillModel: FillModelLabel;
@@ -28,6 +28,13 @@ export interface ConfigDescriptor {
   readonly randomDirection?: boolean;
   /** Complete-set-only: the orchestrator only ever accumulates matched sets. */
   readonly completeSetOnly?: boolean;
+  /**
+   * Strategy V2 (docs/STRATEGY_V2.md): fair-value probability source with the
+   * model-quality gate. The gate is evaluated on hold-out observations only.
+   */
+  readonly v2?: boolean;
+  /** E2 diagnostic: force the gate open regardless of measured skill. */
+  readonly forceGateOpen?: boolean;
 }
 
 /** The four report configurations (T11) plus the two extra D baselines. */
@@ -70,6 +77,21 @@ export const CONFIGS: readonly ConfigDescriptor[] = [
     sizingModel: "directional",
     fillModel: "pessimistic",
     completeSetOnly: true,
+  },
+  {
+    id: "E",
+    label: "V2 fair-value + mispricing + model gate (pessimistic fills)",
+    sizingModel: "edge",
+    fillModel: "pessimistic",
+    v2: true,
+  },
+  {
+    id: "E2",
+    label: "V2 DIAGNOSTIC: gate forced open (what the gate prevented)",
+    sizingModel: "edge",
+    fillModel: "pessimistic",
+    v2: true,
+    forceGateOpen: true,
   },
 ];
 
