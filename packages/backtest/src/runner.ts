@@ -37,6 +37,7 @@ import { StrategyOrchestrator, type DecisionRecord } from "@bot/orchestrator";
 import type { AppConfig } from "@bot/shared";
 import { DEFAULT_SIGNAL_ENGINE_CONFIG, type SignalEngineConfig } from "@bot/strategy";
 import type { CalibrationModel } from "@bot/calibration";
+import type { GateEvaluation } from "@bot/fair-value";
 
 import { tokenPriceAt, type BacktestDataset, type BacktestMarket } from "./dataset.js";
 import { createBacktestPorts, type BacktestAdapterState } from "./ports.js";
@@ -54,6 +55,11 @@ export interface BacktestRunOptions {
   readonly cancelLatencyMs?: number | undefined;
   /** Calibration models per asset (walk-forward artifacts). */
   readonly calibration?: Readonly<Record<string, CalibrationModel>> | undefined;
+  /**
+   * Strategy V2 model-quality gate evaluations per asset (from the
+   * out-of-sample artifact). Absent = every asset gated off (fail closed).
+   */
+  readonly fv2Gate?: Readonly<Record<string, GateEvaluation>> | undefined;
   /**
    * Signal-engine config override. The default is the production config; the
    * 5-minute-cadence dataset needs widened freshness thresholds (disclosed in
@@ -146,6 +152,7 @@ export function runBacktest(
     adapter,
     signalConfig: options.signalConfig ?? DEFAULT_SIGNAL_ENGINE_CONFIG,
     ...(options.calibration !== undefined ? { calibration: options.calibration } : {}),
+    ...(options.fv2Gate !== undefined ? { fv2Gate: options.fv2Gate } : {}),
   });
 
   const allDecisions: DecisionRecord[] = [];

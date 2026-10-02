@@ -21,7 +21,8 @@
     "@bot/orchestrator": "workspace:*",
     "@bot/risk": "workspace:*",
     "@bot/shared": "workspace:*",
-    "@bot/strategy": "workspace:*"
+    "@bot/strategy": "workspace:*",
+    "@bot/fair-value": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

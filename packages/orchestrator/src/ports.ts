@@ -21,6 +21,12 @@ export interface DiscoveredMarket {
   readonly startMs: Millis;
   /** Cycle close (UTC ms) — settlement instant. */
   readonly endMs: Millis;
+  /**
+   * Strategy V2: the window's strike (Chainlink priceToBeat) when the
+   * discovery source carries it; undefined = the FV anchor component runs
+   * dormant (never fabricated).
+   */
+  readonly priceToBeat?: number | undefined;
 }
 
 /** Health/freshness snapshot for one market's data. */

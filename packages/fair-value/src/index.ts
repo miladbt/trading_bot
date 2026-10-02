@@ -26,3 +26,11 @@ export {
   type MispricingResult,
   type UnderlyingEvidence,
 } from "./fair-value.js";
+
+export {
+  anchorDistFrac,
+  momentumPerMin,
+  volAccelPerMin2,
+  type Obs,
+  type Series,
+} from "./evidence.js";

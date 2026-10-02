@@ -9,8 +9,10 @@ import {
 } from "@bot/execution";
 import { decFromString, millis, type Decimal, type Millis } from "@bot/domain";
 import { DEFAULT_ASSETS, DEFAULT_MARKET, DEFAULT_RISK, DEFAULT_STRATEGY } from "@bot/shared";
+import type { AppConfig } from "@bot/shared";
 import { DEFAULT_SIGNAL_ENGINE_CONFIG } from "@bot/strategy";
 import { deserializeCalibration } from "@bot/calibration";
+import type { GateEvaluation } from "@bot/fair-value";
 import type { AssetSymbol } from "@bot/domain";
 
 import type {
@@ -165,6 +167,7 @@ function appConfig() {
     market: DEFAULT_MARKET,
     strategy: DEFAULT_STRATEGY,
     risk: DEFAULT_RISK,
+    fees: { takerRate: d("0.002"), takerOnly: true, rebateRate: d("0") },
     execution: { postOnly: false, maxRetries: 3, maxReconnects: 5 },
     hedge: { externalHedgeEnabled: false },
     services: { apiPort: 3001, databaseUrl: "postgres://localhost/test" },
@@ -201,6 +204,51 @@ function makeOrchestrator(ports: MockPorts, adapter?: SpyAdapter) {
   });
   return { orchestrator, spy };
 }
+
+/** V2 variant: fair-value-v2 source with an optional per-asset gate. */
+function makeV2Orchestrator(ports: MockPorts, gate: Record<string, GateEvaluation> | undefined) {
+  const paper = createExecutionAdapter("paper", {
+    tokens: ALL_TOKENS.map((tokenId) => ({
+      tokenId,
+      book: createSimulatedBook([{ price: d("0.45"), qty: d("500") }]),
+    })),
+    takerFeeRate: d("0.002"),
+  });
+  const spy = new SpyAdapter(paper);
+  const base = appConfig() as unknown as AppConfig;
+  const config = {
+    ...base,
+    strategy: {
+      ...base.strategy,
+      sizingModel: "edge" as const,
+      probabilitySource: "fair-value-v2" as const,
+      fv2MinMispricing: d("0.01"),
+    },
+  } as unknown as AppConfig;
+  const orchestrator = new StrategyOrchestrator({
+    config,
+    ports,
+    adapter: spy,
+    signalConfig: DEFAULT_SIGNAL_ENGINE_CONFIG,
+    ...(gate !== undefined ? { fv2Gate: gate } : {}),
+  });
+  return { orchestrator, spy };
+}
+
+const GATE_OPEN = {
+  verdict: "open" as const,
+  brier: 0.2,
+  logLoss: 0.6,
+  sampleCount: 100,
+  reason: "beats coin-flip baseline",
+};
+const GATE_CLOSED = {
+  verdict: "closed" as const,
+  brier: 0.26,
+  logLoss: 0.7,
+  sampleCount: 100,
+  reason: "does not beat coin-flip baseline",
+};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -688,5 +736,75 @@ describe("probability calibration (T2)", () => {
     expect(() => orchestrator.loadCalibrationJson("BTC", JSON.stringify({ schema: 999 }))).toThrow(
       /unsupported schema/,
     );
+  });
+});
+
+describe("strategy V2 — fair-value source + model-quality gate", () => {
+  function bullishWorld(): MockPorts {
+    const ports = new MockPorts();
+    const m = market({ priceToBeat: 100 }); // strike at the trend's start price
+    ports.markets = [m];
+    ports.setHealthyData(m, "0.45", "0.56");
+    ports.setUpTrend(BTC, millis(T0));
+    return ports;
+  }
+
+  it("gate CLOSED: bullish world produces NO model-driven order (fail closed)", () => {
+    const ports = bullishWorld();
+    const { orchestrator, spy } = makeV2Orchestrator(ports, { BTC: GATE_CLOSED });
+    const decisions = orchestrator.tick(millis(T0));
+    // The signal engine would trade this world under the legacy path; under
+    // V2 with a closed gate the model is muted and no order may go out.
+    expect(spy.calls).toHaveLength(0);
+    expect(decisions.some((x) => x.action === "submit_order")).toBe(false);
+  });
+
+  it("gate ABSENT: same fail-closed behavior, reason audited", () => {
+    const ports = bullishWorld();
+    const { orchestrator, spy } = makeV2Orchestrator(ports, undefined);
+    const decisions = orchestrator.tick(millis(T0));
+    expect(spy.calls).toHaveLength(0);
+    const rec = decisions[0];
+    expect(rec?.detail["fv2Gate"]).toBe("no_gate_artifact");
+  });
+
+  it("gate CLOSED with a CSA-priced book: pipeline evaluates, never submits an order", () => {
+    // The orchestrator never submits `accumulate_sets` actions directly; the
+    // claim under test is that the gate does not BREAK the CSA evaluation and
+    // that nothing model-driven is submitted (fail closed, CSA unaffected).
+    const ports = new MockPorts();
+    const m = market({ priceToBeat: 100 });
+    ports.markets = [m];
+    ports.setHealthyData(m, "0.40", "0.50"); // combined 0.90: CSA edge exists
+    ports.setUpTrend(BTC, millis(T0));
+    const { orchestrator, spy } = makeV2Orchestrator(ports, { BTC: GATE_CLOSED });
+    const decisions = orchestrator.tick(millis(T0));
+    expect(spy.calls).toHaveLength(0);
+    expect(decisions[0]?.action).toBe("no_action");
+    expect(decisions[0]?.detail["fv2Gate"]).toBe("does not beat coin-flip baseline");
+  });
+
+  it("gate OPEN: model opinion flows through and can produce a submit", () => {
+    // Strong uptrend above the strike: FV ≈ 0.72 vs buffered up-cost ≈ 0.476
+    // → a large positive mispricing; the order must route through risk and
+    // target the UP token.
+    const ports = bullishWorld();
+    const { orchestrator, spy } = makeV2Orchestrator(ports, { BTC: GATE_OPEN });
+    orchestrator.tick(millis(T0));
+    expect(spy.calls.length).toBeGreaterThan(0);
+    expect(spy.calls[0]?.tokenId).toBe(ports.markets[0]?.tokenIdUp);
+  });
+
+  it("gate OPEN but no side clears the buffered mispricing threshold: no trade", () => {
+    // Expensive up ask: 0.72 − (0.809 + fee) < 0 and 0.28 − (0.569 + fee) < 0.
+    const ports = new MockPorts();
+    const m = market({ priceToBeat: 100 });
+    ports.markets = [m];
+    ports.setHealthyData(m, "0.80", "0.56");
+    ports.setUpTrend(BTC, millis(T0));
+    const { orchestrator, spy } = makeV2Orchestrator(ports, { BTC: GATE_OPEN });
+    const decisions = orchestrator.tick(millis(T0));
+    expect(spy.calls).toHaveLength(0);
+    expect(decisions.some((x) => x.action === "submit_order")).toBe(false);
   });
 });

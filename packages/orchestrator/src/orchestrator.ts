@@ -65,6 +65,15 @@ import {
   serializeCalibration,
   type CalibrationModel,
 } from "@bot/calibration";
+import {
+  anchorDistFrac as fvAnchorDistFrac,
+  dormant as fvDormant,
+  fairValueEstimate,
+  momentumPerMin as fvMomentumPerMin,
+  volAccelPerMin2 as fvVolAccelPerMin2,
+  DEFAULT_FAIR_VALUE_CONFIG,
+  type GateEvaluation,
+} from "@bot/fair-value";
 
 import type {
   DiscoveredMarket,
@@ -133,6 +142,12 @@ export class StrategyOrchestrator {
   private readonly signalConfig: SignalEngineConfig;
   /** Per-asset fitted calibration model (T2); undefined = raw prior in effect. */
   private readonly calibrationByAsset = new Map<string, CalibrationModel>();
+  /**
+   * Per-asset Strategy V2 model-quality gate evaluation. Absent or
+   * non-"open" = the fair-value model is muted to its base-rate prior
+   * (fail closed) — model-driven sizing stops, CSA/rebalancing continue.
+   */
+  private readonly fv2GateByAsset = new Map<string, GateEvaluation>();
   private readonly auditLog: DecisionRecord[] = [];
   private decisionCounter = 0;
   /** Last new-order time per marketId (quote throttling). */
@@ -155,6 +170,12 @@ export class StrategyOrchestrator {
      * Decimal boundary below (`decFromString(p.toFixed(8))`).
      */
     readonly calibration?: Readonly<Record<string, CalibrationModel>> | undefined;
+    /**
+     * Strategy V2 model-quality gate evaluations keyed by asset (from the
+     * out-of-sample evaluation artifact). An asset without an entry is
+     * gated OFF: the fair-value prior stays at base — no model trades.
+     */
+    readonly fv2Gate?: Readonly<Record<string, GateEvaluation>> | undefined;
   }) {
     const { config } = input;
     // Requirement: do not enable live trading. Refuse a live config outright.
@@ -172,6 +193,11 @@ export class StrategyOrchestrator {
     if (input.calibration !== undefined) {
       for (const [asset, model] of Object.entries(input.calibration)) {
         this.calibrationByAsset.set(asset, model);
+      }
+    }
+    if (input.fv2Gate !== undefined) {
+      for (const [asset, gate] of Object.entries(input.fv2Gate)) {
+        this.fv2GateByAsset.set(asset, gate);
       }
     }
   }
@@ -284,10 +310,49 @@ export class StrategyOrchestrator {
     // Floats are allowed for this statistical step; the money path re-enters
     // through the exact Decimal boundary at the sizing call below.
     const calibration = this.calibrationByAsset.get(String(market.asset));
-    const probabilityUp =
+    let probabilityUp =
       calibration === undefined
         ? signal.probabilityUp
         : evaluateCalibration(calibration, signal.probabilityUp);
+    let fv2DormantComponents = 0;
+
+    // ---- 3c. Strategy V2 probability source (docs/STRATEGY_V2.md) ----
+    // Replaces the signal prior with the fair-value model's P(UP) and applies
+    // the model-quality gate. A closed/absent gate is FAIL CLOSED: no model
+    // opinion reaches sizing at all (neutral signal, no edge block) — the
+    // muted base prior must NOT be traded against market prices, because
+    // "0.5 vs 0.45 ask" would be exactly the unjustified edge V2 forbids.
+    // CSA and inventory reduction/rebalancing continue in every case.
+    let fv2GateReason: string | undefined;
+    const fv2Active = this.appConfig.strategy.probabilitySource === "fair-value-v2";
+    const fv2Gate = fv2Active ? this.fv2GateByAsset.get(String(market.asset)) : undefined;
+    const fv2GateOpen = fv2Gate?.verdict === "open";
+    if (fv2Active) {
+      const gate = fv2Gate;
+      fv2GateReason = gate === undefined ? "no_gate_artifact" : gate.reason;
+      const strike = market.priceToBeat;
+      const fvSeries = samplesToSeries(samples);
+      const estimate = fairValueEstimate({
+        elapsedSec: Math.max(0, (now - market.startMs) / 1000),
+        remainingSec: Math.max(0, (market.endMs - now) / 1000),
+        underlying: {
+          anchorDistFrac:
+            strike === undefined || strike <= 0
+              ? fvDormant
+              : fvAnchorDistFrac(fvSeries[fvSeries.length - 1]?.price ?? Number.NaN, strike),
+          momentumPerMin: fvMomentumPerMin(fvSeries, now, 900_000),
+          volAccelPerMin2: fvVolAccelPerMin2(fvSeries, now, 1_800_000),
+        },
+        market: { bookImbalance: fvDormant }, // no recorded depth yet (honest)
+        config: DEFAULT_FAIR_VALUE_CONFIG,
+      });
+      fv2DormantComponents =
+        (estimate.available.momentum ? 0 : 1) +
+        (estimate.available.anchor ? 0 : 1) +
+        (estimate.available.volAccel ? 0 : 1) +
+        (estimate.available.book ? 0 : 1);
+      probabilityUp = fv2GateOpen ? estimate.pUp : DEFAULT_FAIR_VALUE_CONFIG.base;
+    }
 
     // ---- 4. Market phase (canonical phase engine; AGENTS.md rule 0) ----
     const phaseResult = cyclePhaseAt(
@@ -301,6 +366,15 @@ export class StrategyOrchestrator {
     const phase: MarketPhase = phaseResult.value;
 
     // ---- 5./6. Inventory + complete-set matching (lot-level) ----
+    // V2 charges execution costs to the EXECUTABLE ASK (money stays Decimal)
+    // rather than to the model probability: the planner's edge/Kelly sizing
+    // then sees the buffered cost basis directly.
+    const fv2BufferSum = decAdd(
+      decAdd(this.appConfig.strategy.fv2SlippageBuffer, this.appConfig.strategy.fv2AdverseBuffer),
+      this.appConfig.strategy.fv2UncertaintyBuffer,
+    );
+    const effUpAsk = fv2Active ? decAdd(data.upAsk, fv2BufferSum) : data.upAsk;
+    const effDownAsk = fv2Active ? decAdd(data.downAsk, fv2BufferSum) : data.downAsk;
     const held = this.ports.lots(market.marketId);
     const upLots = held.up.map((l) => portToLot(l, market, "up"));
     const downLots = held.down.map((l) => portToLot(l, market, "down"));
@@ -311,19 +385,25 @@ export class StrategyOrchestrator {
     });
 
     // ---- 7. Hybrid rebalancing (target residual from signal/phase/risk) ----
+    // V2 gate-closed: the pipeline runs with a NEUTRAL signal and no edge
+    // sizing — the planner then only ever proposes complete-set accumulation
+    // and inventory REDUCTION (never model-driven accumulation).
+    const fv2ModelMuted = fv2Active && !fv2GateOpen;
     const account = this.ports.account();
     const plan = planRebalance({
       marketId: marketIdBrand(market.marketId),
-      signal: {
-        direction: decFromString(signal.direction.toFixed(8)),
-        confidence: decFromString(signal.confidence.toFixed(8)),
-      },
+      signal: fv2ModelMuted
+        ? { direction: decZero(), confidence: decZero() }
+        : {
+            direction: decFromString(signal.direction.toFixed(8)),
+            confidence: decFromString(signal.confidence.toFixed(8)),
+          },
       phase,
       upLots,
       downLots,
       economics: {
-        upPrice: data.upAsk,
-        downPrice: data.downAsk,
+        upPrice: effUpAsk,
+        downPrice: effDownAsk,
         settlementValue: decFromString("1"),
       },
       risk: {
@@ -342,8 +422,10 @@ export class StrategyOrchestrator {
       // T1: when the edge model is configured, size the target residual from
       // the model probability vs the executable asks (fractional Kelly, net of
       // the verified taker fee). The legacy directional model stays the
-      // default and is used untouched otherwise.
-      ...(this.appConfig.strategy.sizingModel === "edge"
+      // default and is used untouched otherwise. V2 uses the SAME edge sizing
+      // when its gate is open, with the buffered mispricing threshold; when
+      // the V2 gate is closed there is no edge block at all (fail closed).
+      ...(this.appConfig.strategy.sizingModel === "edge" && !fv2ModelMuted
         ? {
             sizing: {
               model: "edge" as const,
@@ -351,7 +433,9 @@ export class StrategyOrchestrator {
                 pUp: decFromString(probabilityUp.toFixed(8)),
                 takerFeeRate: this.appConfig.fees.takerRate,
                 kellyFraction: this.appConfig.strategy.kellyFraction,
-                minEdge: this.appConfig.strategy.minEdge,
+                minEdge: fv2Active
+                  ? this.appConfig.strategy.fv2MinMispricing
+                  : this.appConfig.strategy.minEdge,
               },
             },
           }
@@ -367,6 +451,12 @@ export class StrategyOrchestrator {
           currentSets: decToString(plan.currentSets),
           residualUp: decToString(plan.residualUp),
           residualDown: decToString(plan.residualDown),
+          ...(fv2Active
+            ? {
+                fv2Gate: fv2GateReason ?? "open",
+                fv2DormantComponents: fv2DormantComponents,
+              }
+            : {}),
         }),
       ];
     }
@@ -453,6 +543,13 @@ export class StrategyOrchestrator {
           matchedSets: decToString(match.matchedSets),
           residualUp: decToString(plan.residualUp),
           residualDown: decToString(plan.residualDown),
+          ...(fv2Active
+            ? {
+                fv2Gate: fv2GateReason ?? "open",
+                fv2DormantComponents: fv2DormantComponents,
+                fv2BufferedAsk: decToString(intended.outcome === "up" ? effUpAsk : effDownAsk),
+              }
+            : {}),
         },
         { riskReason: risk.reason },
       ),
@@ -532,4 +629,16 @@ function orphanUsdc(residualUp: Decimal, residualDown: Decimal, data: MarketData
   const mark = decAdd(data.upAsk, data.downAsk);
   const abs = decCompare(net, decZero()) < 0 ? ((decZero() - net) as Decimal) : net;
   return decMulRound(abs, mark);
+}
+
+/**
+ * Strategy V2: convert spot samples into the fair-value evidence series
+ * (float statistics only; the OUTPUT re-enters through the Decimal boundary
+ * at the sizing call, per AGENTS.md).
+ */
+function samplesToSeries(samples: readonly { price: string; at: Millis }[]): {
+  t: number;
+  price: number;
+}[] {
+  return samples.map((s) => ({ t: Number(s.at), price: Number(s.price) }));
 }

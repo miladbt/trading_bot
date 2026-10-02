@@ -259,6 +259,9 @@ importers:
       '@bot/execution':
         specifier: workspace:*
         version: link:../execution
+      '@bot/fair-value':
+        specifier: workspace:*
+        version: link:../fair-value
       '@bot/inventory':
         specifier: workspace:*
         version: link:../inventory
@@ -425,6 +428,9 @@ importers:
       '@bot/execution':
         specifier: workspace:*
         version: link:../execution
+      '@bot/fair-value':
+        specifier: workspace:*
+        version: link:../fair-value
       '@bot/inventory':
         specifier: workspace:*
         version: link:../inventory
