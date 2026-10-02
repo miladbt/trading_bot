@@ -4,6 +4,13 @@ Status: **pure planning layer only.** Nothing in this pipeline submits orders,
 touches credentials, or performs I/O. The output of the planner is data that
 risk must approve before execution can even consider it.
 
+> **Strategy V2 (fair value + mispricing + model-quality gate):** see
+> `docs/STRATEGY_V2.md` and `reports/backtest-v2.md`. V2 is a selectable
+> probability source (`STRATEGY_PROBABILITY_SOURCE=fair-value-v2`) inside
+> this same pipeline; it refuses model-driven trades unless the model beats
+> the coin-flip baseline out of sample. Default remains the legacy signal
+> source described below.
+
 ```
 market data ──> Signal (packages/strategy)
                     │

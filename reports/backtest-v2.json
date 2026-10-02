@@ -1,0 +1,1052 @@
+{
+  "generatedAt": "2026-10-02T19:52:09.532Z",
+  "datasetPath": "data/backtest/dataset.json",
+  "dataset": {
+    "schema": 1,
+    "provenance": {
+      "fetchedAt": "2026-10-01T11:20:41.423Z",
+      "windowStartMs": 1790744400000,
+      "windowEndMs": 1790852400000,
+      "assets": [
+        "BTC",
+        "ETH"
+      ],
+      "marketCount": 720,
+      "skipped": [],
+      "sources": [
+        "https://gamma-api.polymarket.com/events?slug=<asset>-updown-5m-<unix5m> (market config, clobTokenIds, feeSchedule, eventMetadata settlement ground truth)",
+        "https://clob.polymarket.com/prices-history?market=<clobTokenId>&startTs=..&endTs=..&fidelity=1 (recorded token price paths)"
+      ],
+      "caveats": [
+        "token histories are LAST-TRADED price paths (CLOB prices-history), not full order-book depth; the runner derives a conservative synthetic top-of-book (ask = last + half tick)",
+        "the underlying signal series is the Chainlink TWAP-60s anchor chain (the market's own resolution source), sampled every 5 minutes; it is coarser than the live Binance feed and makes the signal slower/blunter than production",
+        "historical fills use derived books, so queue position is approximate by construction (T4 parameters still applied)"
+      ]
+    },
+    "holdoutMarkets": 576,
+    "trainingMarkets": 144,
+    "marketsPerAsset": {
+      "BTC": 288,
+      "ETH": 288
+    }
+  },
+  "holdout": {
+    "startMs": 1790766000000,
+    "endMs": 1790852400000
+  },
+  "training": {
+    "startMs": 1790744400000,
+    "endMs": 1790766000000
+  },
+  "calibrationInfo": {
+    "BTC": {
+      "method": "isotonic",
+      "version": "walkforward-isotonic-v1",
+      "fittedOn": "training window only"
+    },
+    "ETH": {
+      "method": "isotonic",
+      "version": "walkforward-isotonic-v1",
+      "fittedOn": "training window only"
+    }
+  },
+  "calibrationQuality": {
+    "BTC": {
+      "holdoutSamples": 288,
+      "brier": 0.26163555666700866,
+      "logLoss": 0.7175722458416368,
+      "reliability": [
+        {
+          "index": 0,
+          "lower": 0,
+          "upper": 0.2,
+          "center": 0.1,
+          "meanRaw": 0.1,
+          "meanPredicted": 0,
+          "observed": 0,
+          "count": 0
+        },
+        {
+          "index": 1,
+          "lower": 0.2,
+          "upper": 0.4,
+          "center": 0.30000000000000004,
+          "meanRaw": 0.30000000000000004,
+          "meanPredicted": 0,
+          "observed": 0,
+          "count": 0
+        },
+        {
+          "index": 2,
+          "lower": 0.4,
+          "upper": 0.6000000000000001,
+          "center": 0.5,
+          "meanRaw": 0.5,
+          "meanPredicted": 0.4666666666666673,
+          "observed": 0.5384615384615384,
+          "count": 143
+        },
+        {
+          "index": 3,
+          "lower": 0.6000000000000001,
+          "upper": 0.8,
+          "center": 0.7000000000000001,
+          "meanRaw": 0.7000000000000001,
+          "meanPredicted": 0.6578947368421061,
+          "observed": 0.5172413793103449,
+          "count": 145
+        },
+        {
+          "index": 4,
+          "lower": 0.8,
+          "upper": 1,
+          "center": 0.9,
+          "meanRaw": 0.9,
+          "meanPredicted": 0,
+          "observed": 0,
+          "count": 0
+        }
+      ]
+    },
+    "ETH": {
+      "holdoutSamples": 288,
+      "brier": 0.2525403340997103,
+      "logLoss": 0.6983815067720248,
+      "reliability": [
+        {
+          "index": 0,
+          "lower": 0,
+          "upper": 0.2,
+          "center": 0.1,
+          "meanRaw": 0.1,
+          "meanPredicted": 0,
+          "observed": 0,
+          "count": 0
+        },
+        {
+          "index": 1,
+          "lower": 0.2,
+          "upper": 0.4,
+          "center": 0.30000000000000004,
+          "meanRaw": 0.30000000000000004,
+          "meanPredicted": 0,
+          "observed": 0,
+          "count": 0
+        },
+        {
+          "index": 2,
+          "lower": 0.4,
+          "upper": 0.6000000000000001,
+          "center": 0.5,
+          "meanRaw": 0.5,
+          "meanPredicted": 0.5082070707070715,
+          "observed": 0.5227272727272727,
+          "count": 176
+        },
+        {
+          "index": 3,
+          "lower": 0.6000000000000001,
+          "upper": 0.8,
+          "center": 0.7000000000000001,
+          "meanRaw": 0.7000000000000001,
+          "meanPredicted": 0.6206896551724131,
+          "observed": 0.5535714285714286,
+          "count": 112
+        },
+        {
+          "index": 4,
+          "lower": 0.8,
+          "upper": 1,
+          "center": 0.9,
+          "meanRaw": 0.9,
+          "meanPredicted": 0,
+          "observed": 0,
+          "count": 0
+        }
+      ]
+    }
+  },
+  "fv2Gates": {
+    "BTC": {
+      "verdict": "closed",
+      "brier": 0.25034559946309726,
+      "logLoss": 0.6938362905240408,
+      "sampleCount": 288,
+      "reason": "does not beat coin-flip baseline"
+    },
+    "ETH": {
+      "verdict": "closed",
+      "brier": 0.25026379346792893,
+      "logLoss": 0.693671164353699,
+      "sampleCount": 288,
+      "reason": "does not beat coin-flip baseline"
+    }
+  },
+  "configs": [
+    {
+      "configId": "A",
+      "label": "old (directional) sizing + optimistic fills",
+      "stats": {
+        "configId": "A",
+        "label": "old (directional) sizing + optimistic fills",
+        "ticks": 2880,
+        "submits": 256,
+        "fills": 256,
+        "filledOrders": 256,
+        "unfilledOrders": 0,
+        "partiallyFilledOrders": 0,
+        "spentUsdc": "222.89139005",
+        "feesUsdc": "14.58167968",
+        "settlementUsdc": "208.39747340",
+        "netPnlUsdc": "-14.49391665",
+        "grossPnlUsdc": "208.39747340",
+        "marketsTraded": 243,
+        "marketsSettled": 576,
+        "orphanedMarkets": 243,
+        "orphanRate": 0.421875,
+        "worstMarketPnlUsdc": "-2.53624067",
+        "bestMarketPnlUsdc": "2.14816282",
+        "maxDrawdownUsdc": 22.551563249999983,
+        "sharpeLikePerMarket": -0.06838532614680096,
+        "hitRate": 0.48559670781893005,
+        "marketsWithPositivePnl": 118
+      },
+      "setEdge": {
+        "samples": 5155,
+        "positiveCount": 1168,
+        "positiveFraction": 0.22657613967022308,
+        "meanPositiveEdgeUsdc": 0.028045859357876714,
+        "maxPositiveEdgeUsdc": 0.50743563,
+        "longestPositiveRunTicks": 2,
+        "capturableFraction": 0.8261986301369864,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": -14.4860214,
+          "ciLow": -41.156929389999966,
+          "ciHigh": 11.855552670000003
+        },
+        "hitRate": {
+          "estimate": 0.48559670781893005,
+          "ciLow": 0.42338709677419356,
+          "ciHigh": 0.547945205479452
+        }
+      },
+      "attribution": [
+        {
+          "key": "asset:BTC",
+          "pnl": -7.517678,
+          "cost": 111.312051,
+          "markets": 288
+        },
+        {
+          "key": "asset:ETH",
+          "pnl": -6.968343,
+          "cost": 111.571444,
+          "markets": 288
+        },
+        {
+          "key": "bucket:0.35-0.5",
+          "pnl": -0.038319,
+          "cost": 0.058937,
+          "markets": 5
+        },
+        {
+          "key": "bucket:0.5-0.65",
+          "pnl": -0.233146,
+          "cost": 0.453689,
+          "markets": 38
+        },
+        {
+          "key": "bucket:p<0.35",
+          "pnl": -3.243119,
+          "cost": 107.164368,
+          "markets": 242
+        },
+        {
+          "key": "bucket:p>=0.65",
+          "pnl": -10.971438,
+          "cost": 115.2065,
+          "markets": 291
+        },
+        {
+          "key": "phase:EARLY",
+          "pnl": -10.938355,
+          "cost": 208.645957,
+          "markets": 220
+        },
+        {
+          "key": "phase:FINAL",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 3
+        },
+        {
+          "key": "phase:LATE",
+          "pnl": 0.049831,
+          "cost": 2.222221,
+          "markets": 7
+        },
+        {
+          "key": "phase:MID",
+          "pnl": -3.597497,
+          "cost": 12.015316,
+          "markets": 16
+        },
+        {
+          "key": "phase:none",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 330
+        }
+      ],
+      "notes": []
+    },
+    {
+      "configId": "B",
+      "label": "old (directional) sizing + pessimistic fills",
+      "stats": {
+        "configId": "B",
+        "label": "old (directional) sizing + pessimistic fills",
+        "ticks": 2880,
+        "submits": 816,
+        "fills": 9854,
+        "filledOrders": 444,
+        "unfilledOrders": 372,
+        "partiallyFilledOrders": 444,
+        "spentUsdc": "189.23478119",
+        "feesUsdc": "12.37984407",
+        "settlementUsdc": "145.71514160",
+        "netPnlUsdc": "-43.51963959",
+        "grossPnlUsdc": "145.71514160",
+        "marketsTraded": 238,
+        "marketsSettled": 576,
+        "orphanedMarkets": 238,
+        "orphanRate": 0.4131944444444444,
+        "worstMarketPnlUsdc": "-2.39706041",
+        "bestMarketPnlUsdc": "2.69515935",
+        "maxDrawdownUsdc": 28.778894580000006,
+        "sharpeLikePerMarket": -0.1287672667441798,
+        "hitRate": 0.33613445378151263,
+        "marketsWithPositivePnl": 80
+      },
+      "setEdge": {
+        "samples": 5155,
+        "positiveCount": 1168,
+        "positiveFraction": 0.22657613967022308,
+        "meanPositiveEdgeUsdc": 0.028045859357876714,
+        "maxPositiveEdgeUsdc": 0.50743563,
+        "longestPositiveRunTicks": 2,
+        "capturableFraction": 0.8261986301369864,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": -28.77337633000001,
+          "ciLow": -57.38118931999999,
+          "ciHigh": -0.29000253999999615
+        },
+        "hitRate": {
+          "estimate": 0.33613445378151263,
+          "ciLow": 0.27232142857142855,
+          "ciHigh": 0.4
+        }
+      },
+      "attribution": [
+        {
+          "key": "asset:BTC",
+          "pnl": -22.360492,
+          "cost": 94.655022,
+          "markets": 288
+        },
+        {
+          "key": "asset:ETH",
+          "pnl": -6.412884,
+          "cost": 79.833496,
+          "markets": 288
+        },
+        {
+          "key": "bucket:0.35-0.5",
+          "pnl": -0.037063,
+          "cost": 0.052526,
+          "markets": 5
+        },
+        {
+          "key": "bucket:0.5-0.65",
+          "pnl": -0.139144,
+          "cost": 0.323354,
+          "markets": 38
+        },
+        {
+          "key": "bucket:p<0.35",
+          "pnl": -19.558936,
+          "cost": 86.21575,
+          "markets": 242
+        },
+        {
+          "key": "bucket:p>=0.65",
+          "pnl": -9.038234,
+          "cost": 87.896887,
+          "markets": 291
+        },
+        {
+          "key": "phase:EARLY",
+          "pnl": -27.476949,
+          "cost": 74.174386,
+          "markets": 105
+        },
+        {
+          "key": "phase:FINAL",
+          "pnl": -7.159451,
+          "cost": 17.85703,
+          "markets": 28
+        },
+        {
+          "key": "phase:MID",
+          "pnl": 5.863025,
+          "cost": 82.457102,
+          "markets": 105
+        },
+        {
+          "key": "phase:none",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 338
+        }
+      ],
+      "notes": []
+    },
+    {
+      "configId": "C",
+      "label": "edge-based sizing + pessimistic fills (main candidate)",
+      "stats": {
+        "configId": "C",
+        "label": "edge-based sizing + pessimistic fills (main candidate)",
+        "ticks": 2880,
+        "submits": 1713,
+        "fills": 26628,
+        "filledOrders": 1083,
+        "unfilledOrders": 630,
+        "partiallyFilledOrders": 1083,
+        "spentUsdc": "148.26897451",
+        "feesUsdc": "9.69983497",
+        "settlementUsdc": "121.88482631",
+        "netPnlUsdc": "-26.38414820",
+        "grossPnlUsdc": "121.88482631",
+        "marketsTraded": 479,
+        "marketsSettled": 576,
+        "orphanedMarkets": 479,
+        "orphanRate": 0.8315972222222222,
+        "worstMarketPnlUsdc": "-1.27012781",
+        "bestMarketPnlUsdc": "5.93103514",
+        "maxDrawdownUsdc": 18.402294359999996,
+        "sharpeLikePerMarket": -0.04360067467581871,
+        "hitRate": 0.20041753653444677,
+        "marketsWithPositivePnl": 96
+      },
+      "setEdge": {
+        "samples": 5155,
+        "positiveCount": 1168,
+        "positiveFraction": 0.22657613967022308,
+        "meanPositiveEdgeUsdc": 0.028045859357876714,
+        "maxPositiveEdgeUsdc": 0.50743563,
+        "longestPositiveRunTicks": 2,
+        "capturableFraction": 0.8261986301369864,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": -13.713869240000008,
+          "ciLow": -41.36693536000007,
+          "ciHigh": 14.876503340000003
+        },
+        "hitRate": {
+          "estimate": 0.20041753653444677,
+          "ciLow": 0.16494845360824742,
+          "ciHigh": 0.23739495798319327
+        }
+      },
+      "attribution": [
+        {
+          "key": "asset:BTC",
+          "pnl": -15.324613,
+          "cost": 79.758275,
+          "markets": 288
+        },
+        {
+          "key": "asset:ETH",
+          "pnl": 1.610744,
+          "cost": 55.840421,
+          "markets": 288
+        },
+        {
+          "key": "bucket:0.35-0.5",
+          "pnl": -0.650198,
+          "cost": 0.80678,
+          "markets": 5
+        },
+        {
+          "key": "bucket:0.5-0.65",
+          "pnl": 2.750034,
+          "cost": 2.909491,
+          "markets": 38
+        },
+        {
+          "key": "bucket:p<0.35",
+          "pnl": -7.041202,
+          "cost": 48.323574,
+          "markets": 242
+        },
+        {
+          "key": "bucket:p>=0.65",
+          "pnl": -8.772503,
+          "cost": 83.558851,
+          "markets": 291
+        },
+        {
+          "key": "phase:EARLY",
+          "pnl": -9.804926,
+          "cost": 67.792641,
+          "markets": 171
+        },
+        {
+          "key": "phase:FINAL",
+          "pnl": 0.089246,
+          "cost": 6.328756,
+          "markets": 63
+        },
+        {
+          "key": "phase:MID",
+          "pnl": -3.998189,
+          "cost": 61.477299,
+          "markets": 245
+        },
+        {
+          "key": "phase:none",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 97
+        }
+      ],
+      "notes": []
+    },
+    {
+      "configId": "D1",
+      "label": "baseline: no trade",
+      "stats": {
+        "configId": "D1",
+        "label": "baseline: no trade",
+        "ticks": 2880,
+        "submits": 0,
+        "fills": 0,
+        "filledOrders": 0,
+        "unfilledOrders": 0,
+        "partiallyFilledOrders": 0,
+        "spentUsdc": "0.00000000",
+        "feesUsdc": "0.00000000",
+        "settlementUsdc": "0.00000000",
+        "netPnlUsdc": "0.00000000",
+        "grossPnlUsdc": "0.00000000",
+        "marketsTraded": 0,
+        "marketsSettled": 576,
+        "orphanedMarkets": 0,
+        "orphanRate": 0,
+        "worstMarketPnlUsdc": "0.00000000",
+        "bestMarketPnlUsdc": "0.00000000",
+        "maxDrawdownUsdc": 0,
+        "sharpeLikePerMarket": null,
+        "hitRate": null,
+        "marketsWithPositivePnl": 0
+      },
+      "setEdge": {
+        "samples": 0,
+        "positiveCount": 0,
+        "positiveFraction": 0,
+        "meanPositiveEdgeUsdc": null,
+        "maxPositiveEdgeUsdc": null,
+        "longestPositiveRunTicks": 0,
+        "capturableFraction": 0,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": 0,
+          "ciLow": 0,
+          "ciHigh": 0
+        },
+        "hitRate": null
+      },
+      "attribution": [],
+      "notes": [
+        "no-trade baseline: zero activity by definition; reported analytically (the pipeline itself is exercised by every other config)"
+      ]
+    },
+    {
+      "configId": "D2",
+      "label": "baseline: random direction, same sizing",
+      "stats": {
+        "configId": "D2",
+        "label": "baseline: random direction, same sizing",
+        "ticks": 0,
+        "submits": 0,
+        "fills": 0,
+        "filledOrders": 0,
+        "unfilledOrders": 0,
+        "partiallyFilledOrders": 0,
+        "spentUsdc": "0.00000000",
+        "feesUsdc": "0.00000000",
+        "settlementUsdc": "0.00000000",
+        "netPnlUsdc": "0.00000000",
+        "grossPnlUsdc": "0.00000000",
+        "marketsTraded": 0,
+        "marketsSettled": 576,
+        "orphanedMarkets": 0,
+        "orphanRate": 0,
+        "worstMarketPnlUsdc": "0.00000000",
+        "bestMarketPnlUsdc": "0.00000000",
+        "maxDrawdownUsdc": 0,
+        "sharpeLikePerMarket": null,
+        "hitRate": null,
+        "marketsWithPositivePnl": 0
+      },
+      "setEdge": {
+        "samples": 0,
+        "positiveCount": 0,
+        "positiveFraction": 0,
+        "meanPositiveEdgeUsdc": null,
+        "maxPositiveEdgeUsdc": null,
+        "longestPositiveRunTicks": 0,
+        "capturableFraction": 0,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": 0,
+          "ciLow": 0,
+          "ciHigh": 0
+        },
+        "hitRate": null
+      },
+      "attribution": [],
+      "notes": [
+        "NOT RUN: a random-direction baseline requires modifying strategy/orchestrator code (direction is signal-derived by design). Recorded as an open question instead of being faked."
+      ]
+    },
+    {
+      "configId": "D3",
+      "label": "baseline: complete-set-only (always neutral)",
+      "stats": {
+        "configId": "D3",
+        "label": "baseline: complete-set-only (always neutral)",
+        "ticks": 2880,
+        "submits": 0,
+        "fills": 0,
+        "filledOrders": 0,
+        "unfilledOrders": 0,
+        "partiallyFilledOrders": 0,
+        "spentUsdc": "0.00000000",
+        "feesUsdc": "0.00000000",
+        "settlementUsdc": "0.00000000",
+        "netPnlUsdc": "0.00000000",
+        "grossPnlUsdc": "0.00000000",
+        "marketsTraded": 0,
+        "marketsSettled": 576,
+        "orphanedMarkets": 0,
+        "orphanRate": 0,
+        "worstMarketPnlUsdc": "0.00000000",
+        "bestMarketPnlUsdc": "0.00000000",
+        "maxDrawdownUsdc": 0,
+        "sharpeLikePerMarket": null,
+        "hitRate": null,
+        "marketsWithPositivePnl": 0
+      },
+      "setEdge": {
+        "samples": 5155,
+        "positiveCount": 1168,
+        "positiveFraction": 0.22657613967022308,
+        "meanPositiveEdgeUsdc": 0.028045859357876714,
+        "maxPositiveEdgeUsdc": 0.50743563,
+        "longestPositiveRunTicks": 2,
+        "capturableFraction": 0.8261986301369864,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": 0,
+          "ciLow": 0,
+          "ciHigh": 0
+        },
+        "hitRate": null
+      },
+      "attribution": [
+        {
+          "key": "asset:BTC",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 288
+        },
+        {
+          "key": "asset:ETH",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 288
+        },
+        {
+          "key": "bucket:0.35-0.5",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 5
+        },
+        {
+          "key": "bucket:0.5-0.65",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 38
+        },
+        {
+          "key": "bucket:p<0.35",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 242
+        },
+        {
+          "key": "bucket:p>=0.65",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 291
+        },
+        {
+          "key": "phase:none",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 576
+        }
+      ],
+      "notes": [
+        "complete-set-only: maxResidual=0 disables directional targets by design; no directional trades"
+      ]
+    },
+    {
+      "configId": "E",
+      "label": "V2 fair-value + mispricing + model gate (pessimistic fills)",
+      "stats": {
+        "configId": "E",
+        "label": "V2 fair-value + mispricing + model gate (pessimistic fills)",
+        "ticks": 2880,
+        "submits": 0,
+        "fills": 0,
+        "filledOrders": 0,
+        "unfilledOrders": 0,
+        "partiallyFilledOrders": 0,
+        "spentUsdc": "0.00000000",
+        "feesUsdc": "0.00000000",
+        "settlementUsdc": "0.00000000",
+        "netPnlUsdc": "0.00000000",
+        "grossPnlUsdc": "0.00000000",
+        "marketsTraded": 0,
+        "marketsSettled": 576,
+        "orphanedMarkets": 0,
+        "orphanRate": 0,
+        "worstMarketPnlUsdc": "0.00000000",
+        "bestMarketPnlUsdc": "0.00000000",
+        "maxDrawdownUsdc": 0,
+        "sharpeLikePerMarket": null,
+        "hitRate": null,
+        "marketsWithPositivePnl": 0
+      },
+      "setEdge": {
+        "samples": 5155,
+        "positiveCount": 1168,
+        "positiveFraction": 0.22657613967022308,
+        "meanPositiveEdgeUsdc": 0.028045859357876714,
+        "maxPositiveEdgeUsdc": 0.50743563,
+        "longestPositiveRunTicks": 2,
+        "capturableFraction": 0.8261986301369864,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": 0,
+          "ciLow": 0,
+          "ciHigh": 0
+        },
+        "hitRate": null
+      },
+      "attribution": [
+        {
+          "key": "asset:BTC",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 288
+        },
+        {
+          "key": "asset:ETH",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 288
+        },
+        {
+          "key": "bucket:0.35-0.5",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 5
+        },
+        {
+          "key": "bucket:0.5-0.65",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 38
+        },
+        {
+          "key": "bucket:p<0.35",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 242
+        },
+        {
+          "key": "bucket:p>=0.65",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 291
+        },
+        {
+          "key": "phase:none",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 576
+        }
+      ],
+      "notes": [
+        "fv2 gate BTC: closed (brier=0.2503, logLoss=0.6938, n=288) — does not beat coin-flip baseline",
+        "fv2 gate ETH: closed (brier=0.2503, logLoss=0.6937, n=288) — does not beat coin-flip baseline"
+      ]
+    },
+    {
+      "configId": "E2",
+      "label": "V2 DIAGNOSTIC: gate forced open (what the gate prevented)",
+      "stats": {
+        "configId": "E2",
+        "label": "V2 DIAGNOSTIC: gate forced open (what the gate prevented)",
+        "ticks": 2880,
+        "submits": 1279,
+        "fills": 25862,
+        "filledOrders": 1277,
+        "unfilledOrders": 2,
+        "partiallyFilledOrders": 1062,
+        "spentUsdc": "191.71269744",
+        "feesUsdc": "12.54194841",
+        "settlementUsdc": "166.69602020",
+        "netPnlUsdc": "-25.01667724",
+        "grossPnlUsdc": "166.69602020",
+        "marketsTraded": 425,
+        "marketsSettled": 576,
+        "orphanedMarkets": 425,
+        "orphanRate": 0.7378472222222222,
+        "worstMarketPnlUsdc": "-0.68952602",
+        "bestMarketPnlUsdc": "3.12192495",
+        "maxDrawdownUsdc": 15.879477789999996,
+        "sharpeLikePerMarket": -0.01953633919118401,
+        "hitRate": 0.3058823529411765,
+        "marketsWithPositivePnl": 130
+      },
+      "setEdge": {
+        "samples": 5155,
+        "positiveCount": 1168,
+        "positiveFraction": 0.22657613967022308,
+        "meanPositiveEdgeUsdc": 0.028045859357876714,
+        "maxPositiveEdgeUsdc": 0.50743563,
+        "longestPositiveRunTicks": 2,
+        "capturableFraction": 0.8261986301369864,
+        "captureLatencyTicks": 2
+      },
+      "bootstrap": {
+        "netPnl": {
+          "estimate": -5.159547809999993,
+          "ciLow": -29.791937809999993,
+          "ciHigh": 20.364660289999996
+        },
+        "hitRate": {
+          "estimate": 0.3058823529411765,
+          "ciLow": 0.2651162790697674,
+          "ciHigh": 0.35141509433962265
+        }
+      },
+      "attribution": [
+        {
+          "key": "asset:BTC",
+          "pnl": -9.725164,
+          "cost": 89.117278,
+          "markets": 288
+        },
+        {
+          "key": "asset:ETH",
+          "pnl": 4.565616,
+          "cost": 82.73829,
+          "markets": 288
+        },
+        {
+          "key": "bucket:0.35-0.5",
+          "pnl": -0.651268,
+          "cost": 1.096203,
+          "markets": 5
+        },
+        {
+          "key": "bucket:0.5-0.65",
+          "pnl": 2.893232,
+          "cost": 5.093309,
+          "markets": 38
+        },
+        {
+          "key": "bucket:p<0.35",
+          "pnl": 5.247663,
+          "cost": 80.930197,
+          "markets": 242
+        },
+        {
+          "key": "bucket:p>=0.65",
+          "pnl": -12.649174,
+          "cost": 84.735858,
+          "markets": 291
+        },
+        {
+          "key": "phase:EARLY",
+          "pnl": -3.949203,
+          "cost": 159.719162,
+          "markets": 374
+        },
+        {
+          "key": "phase:FINAL",
+          "pnl": 1.876189,
+          "cost": 0.661148,
+          "markets": 5
+        },
+        {
+          "key": "phase:LATE",
+          "pnl": 0.288853,
+          "cost": 1.458528,
+          "markets": 10
+        },
+        {
+          "key": "phase:MID",
+          "pnl": -3.375387,
+          "cost": 10.01673,
+          "markets": 39
+        },
+        {
+          "key": "phase:none",
+          "pnl": 0,
+          "cost": 0,
+          "markets": 148
+        }
+      ],
+      "notes": [
+        "fv2 gate BTC: open (brier=0.2503, logLoss=0.6938, n=288) — FORCED OPEN (diagnostic)",
+        "fv2 gate ETH: open (brier=0.2503, logLoss=0.6937, n=288) — FORCED OPEN (diagnostic)",
+        "DIAGNOSTIC ONLY: gate forced open regardless of measured skill — quantifies what the gate prevented; not a recommendation"
+      ]
+    }
+  ],
+  "phaseComparison": [
+    {
+      "curve": "canonical",
+      "netPnlUsdc": "-43.51963959",
+      "fills": 9854,
+      "submits": 816
+    },
+    {
+      "curve": "flat",
+      "netPnlUsdc": "-43.76433028",
+      "fills": 11148,
+      "submits": 963
+    },
+    {
+      "curve": "reversed",
+      "netPnlUsdc": "-29.58998325",
+      "fills": 22048,
+      "submits": 2085
+    }
+  ],
+  "sensitivity": [
+    {
+      "name": "latency-100ms",
+      "netPnlUsdc": "-26.38414820",
+      "fills": 26628,
+      "submits": 1713
+    },
+    {
+      "name": "latency-500ms",
+      "netPnlUsdc": "-26.38414820",
+      "fills": 26628,
+      "submits": 1713
+    },
+    {
+      "name": "fee-zero",
+      "netPnlUsdc": "-16.43993020",
+      "fills": 27088,
+      "submits": 1738
+    },
+    {
+      "name": "fee-0.10",
+      "netPnlUsdc": "-27.20481448",
+      "fills": 26767,
+      "submits": 1733
+    },
+    {
+      "name": "adverse-0",
+      "netPnlUsdc": "-26.38414820",
+      "fills": 26628,
+      "submits": 1713
+    },
+    {
+      "name": "adverse-0.02",
+      "netPnlUsdc": "-26.38414820",
+      "fills": 26628,
+      "submits": 1713
+    }
+  ],
+  "sensitivityNotes": {
+    "latency": "fill events in this harness are all-or-nothing per tick at a fixed tick grid; 100 ms vs 500 ms submit latency never changes which tick an order fills on, so the factor is INERT here — a tick-level replay with real depth is needed to measure latency sensitivity",
+    "adverseSelection": "adverse-moveThreshold relaxes the trade-through requirement when mid drifts against a resting order; the runner refreshes books BEFORE the orchestrator submits and orders rest at most one tick, so the adverse-relaxation path never triggers in this replay — the factor is INERT here and real adverse selection is UNDER-modeled"
+  },
+  "settings": {
+    "sizingShared": {
+      "maxResidualShares": 20,
+      "maxOrderSizeShares": 50,
+      "maxTotalCapitalUsdc": 100,
+      "kellyFraction": 0.25,
+      "minEdge": 0.01
+    },
+    "fills": {
+      "model": "pessimistic (A optimistic)",
+      "tradeThrough": 0.001,
+      "queuePositionFactor": 0.5,
+      "adverseMoveThreshold": 0.01,
+      "submitLatencyMs": 250,
+      "cancelLatencyMs": 250
+    },
+    "fees": {
+      "takerRate": 0.07,
+      "takerOnly": true,
+      "source": "docs/RESOLUTION_AND_FEES.md (verified 2026-09-29)"
+    },
+    "fv2": {
+      "probabilityModel": "transparent bounded additive (docs/STRATEGY_V2.md §3)",
+      "gateThresholds": {
+        "maxBrier": 0.23,
+        "maxLogLoss": 0.6731471805599453
+      },
+      "minMispricing": 0.01,
+      "buffers": {
+        "slippage": 0.003,
+        "adverse": 0.003,
+        "uncertainty": 0.003
+      },
+      "bookEvidence": "dormant — schema-1 dataset carries no order-book depth (honest degradation)",
+      "gateDisclosure": "gate set from hold-out aggregate skill (see fv2Gates note above); E2 is the forced-open counterfactual"
+    },
+    "tickMs": 30000,
+    "signalEngine": "dataset-cadence rescale (returnLookbackMs 300000, volatilityLookbackMs 600000, rangeLookbackMs 900000, maxDataAgeMs 300000) — disclosed deviation; production default untouched"
+  },
+  "gitCommit": "05d9f75"
+}

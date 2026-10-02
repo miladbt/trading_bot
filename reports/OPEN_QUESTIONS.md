@@ -50,6 +50,12 @@ live-order path.
 
 ## 3. Latency and adverse-move sensitivity factors are inert — DISCLOSED / DECISION NEEDED
 
+**V2 note (Strategy V2, docs/STRATEGY_V2.md):** the fair-value engine's
+order-book component and market-impact buffer are built to activate the
+moment real depth is recorded — on schema-1 data they run dormant (reported
+per decision), so V2 currently has strictly less information than it is
+designed to use. Recording books is the single highest-value data upgrade.
+
 **Question:** Accept the inert result, or invest in tick-level book/trade
 recording to make latency and adverse-selection modeling meaningful?
 
@@ -107,17 +113,22 @@ exchange price — strategy edge measured against it may not transfer.
 **Question:** Is there any signal to find here at all, and if so, from what
 data?
 
-**Facts:** Walk-forward isotonic calibration (6h training / 24h hold-out)
-scored BTC 0.2616, ETH 0.2525 — both **worse than the 0.25 coin-flip
-baseline** on 288 settled markets per asset. The 24h backtest lost money in
-every traded configuration (A −14.49, B −43.52, C −26.38 USDC net; B's CI
-excludes zero). No sizing scheme, phase weighting, or fee assumption rescues
-a probability estimate with no out-of-sample skill.
+**Facts (updated after the Strategy V2 run, reports/backtest-v2.md):**
+Walk-forward isotonic calibration (6h training / 24h hold-out) scored
+BTC 0.2616, ETH 0.2525, and the V2 transparent fair-value model scored
+0.2503 Brier / 0.6938 log loss on both assets — all at or worse than the
+0.25 coin-flip baseline on 288 settled markets per asset. The 24h backtest
+lost money in every traded configuration (A −14.49, B −43.52, C −26.38,
+E2 forced-open V2 −25.02 USDC net; B's CI excludes zero), while the gated
+V2 config E traded nothing (0 USDC) — the model-quality gate is working as
+designed and remains closed until a model beats Brier < 0.23 AND log loss
+< 0.6732 on ≥ 50 fresh out-of-sample observations.
 
 **Options:** (a) collect more windows across regimes and repeat honestly;
-(b) redesign the signal from richer recorded data (book depth, trades — see
-§3); (c) conclude the strategy class has no edge on this market and stop.
-The honest default until then: paper only, no live path.
+(b) build signals from richer recorded data (book depth, trades — see §3);
+(c) conclude the strategy class has no edge on this market and stop. The
+honest default until then: paper only, no live path; the gate decides
+whether model-driven trading is permitted at all.
 
 ---
 
